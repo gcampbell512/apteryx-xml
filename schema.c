@@ -17,16 +17,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
-#ifdef HAVE_LIBXML2
-#include "internal.h"
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <glib.h>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <syslog.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
-#ifdef TEST
-#include <CUnit/CUnit.h>
-#include <CUnit/Basic.h>
-#endif
+#include "apteryx-xml.h"
 
 /* List full paths for all XML files in the search path */
 static void
@@ -147,11 +149,10 @@ sch_load (const char *path)
     for (iter = files; iter; iter = g_list_next (iter))
     {
         char *filename = (char *) iter->data;
-        DEBUG ("LUA: Loading %s\n", filename);
         xmlDoc *new = xmlParseFile (filename);
         if (new == NULL)
         {
-            ERROR ("LUA: failed to parse \"%s\"", filename);
+            syslog (LOG_ERR, "LUA: failed to parse \"%s\"", filename);
             continue;
         }
         cleanup_nodes (xmlDocGetRootElement (new)->children);
@@ -205,8 +206,6 @@ lookup_node (xmlNode *node, const char *path)
     char *name, *mode;
     char *key = NULL;
     int len;
-
-    DEBUG ("SCH: Lookup \"%s\"\n", path);
 
     if (!node)
     {
@@ -385,5 +384,3 @@ sch_name (sch_node *node)
 {
     return (char *) xmlGetProp (node, (xmlChar *) "name");
 }
-
-#endif /* HAVE_LIBXML2 */
