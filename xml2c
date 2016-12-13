@@ -154,6 +154,24 @@ function generate_defines(tbl, path, depth)
                 print(string.format("#define %-50s     %s", start, finish))
             end
         end
+        if tbl["Attributes"]["pattern"] then
+            -- Just match on patterns with a single range at the start of the pattern.
+            if string.find (tbl["Attributes"]["pattern"], "%^{{range") ~= nil and
+                string.find (tbl["Attributes"]["pattern"], "range", 8) == nil then
+                min, max = string.match(tbl["Attributes"]["pattern"], "([^(,]+),([^,)]+)")
+                min_start = def .. "_MIN_VALUE"
+                min_finish = "\"" .. min .. "\""
+                max_start = def .. "_MAX_VALUE"
+                max_finish = "\"" .. max .. "\""
+                if string.find(path, "*") then
+                    print(string.format("#define %-50s         %s", min_start, min_finish))
+                    print(string.format("#define %-50s         %s", max_start, max_finish))
+                else
+                    print(string.format("#define %-50s     %s", min_start, min_finish))
+                    print(string.format("#define %-50s     %s", max_start, max_finish))
+                end
+            end
+        end
     end
     if tbl["ChildNodes"] ~= nil then
         for i,field in pairs(tbl["ChildNodes"]) do
