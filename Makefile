@@ -38,20 +38,26 @@ endif
 EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0)
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0)
 
-all: libapteryx-xml.so
+all: libapteryx-xml.so libapteryx-schema.so
 
-libapteryx-xml.so: schema.o lua.o
+libapteryx-schema.so: schema.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
-	@ln -s -f $@ apteryx-xml.so
+
+libapteryx-xml.so: libapteryx-schema.so
+libapteryx-xml.so: lua.o
+	@echo "Creating library "$@""
+	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $< $(EXTRA_LDFLAGS) -L. -lapteryx-schema
+	$(Q)ln -s -f $@ apteryx-xml.so
 
 %.o: %.c
 	@echo "Compiling "$<""
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
-unittest: test.c libapteryx-xml.so
+unittest: libapteryx-xml.so libapteryx-schema.so
+unittest: test.c
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS) -lcunit
+	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS) -L. -lapteryx-xml -lapteryx-schema -lcunit
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
@@ -74,13 +80,16 @@ test: unittest
 	@echo "Tests have been run!"
 
 install: all
-	@install -d $(DESTDIR)/etc/apteryx/schema
-	@install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
-	@install -d $(DESTDIR)/$(PREFIX)/lib
-	@install -D libapteryx-xml.so $(DESTDIR)/$(PREFIX)/lib/
+	$(Q)install -d $(DESTDIR)/etc/apteryx/schema
+	$(Q)install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
+	$(Q)install -d $(DESTDIR)/$(PREFIX)/lib
+	$(Q)install -D libapteryx-xml.so $(DESTDIR)/$(PREFIX)/lib/
+	$(Q)install -D libapteryx-schema.so $(DESTDIR)/$(PREFIX)/lib/
+	$(Q)install -d $(DESTDIR)/$(PREFIX)/include
+	$(Q)install -D apteryx-xml.h $(DESTDIR)/$(PREFIX)/include/
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx-xml.so apteryx-xml.so unittest *.o
+	@rm -f libapteryx-schema.so libapteryx-xml.so apteryx-xml.so unittest *.o
 
 .PHONY: all clean
