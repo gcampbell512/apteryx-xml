@@ -31,7 +31,7 @@
 			<xs:attribute name="mode" use="optional">
 				<xs:simpleType>
 					<xs:restriction base="xs:string">
-						<xs:pattern value="(p|h|x|hx|r|hr|w|hw|rw|hrw)"/>
+						<xs:pattern value="(p|x|hx|[rhwc]{1,4})"/>
 					</xs:restriction>
 				</xs:simpleType>
 			</xs:attribute>

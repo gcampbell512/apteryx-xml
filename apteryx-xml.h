@@ -28,6 +28,7 @@ sch_node* sch_lookup (sch_instance *schema, const char *path);
 bool sch_is_leaf (sch_node *node);
 bool sch_is_readable (sch_node *node);
 bool sch_is_writable (sch_node *node);
+bool sch_is_config (sch_node *node);
 char* sch_name (sch_node *node);
 char* sch_translate_to (sch_node *node, char *value);
 char* sch_translate_from (sch_node *node, char *value);

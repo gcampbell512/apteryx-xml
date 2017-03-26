@@ -323,6 +323,20 @@ sch_is_writable (sch_node *node)
     return access;
 }
 
+bool
+sch_is_config (sch_node *node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    bool access = false;
+    char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
+    if (mode && strchr (mode, 'c') != NULL)
+    {
+        access = true;
+    }
+    free (mode);
+    return access;
+}
+
 char *
 sch_translate_to (sch_node *node, char *value)
 {
