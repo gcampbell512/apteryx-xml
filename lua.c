@@ -22,17 +22,37 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <apteryx.h>
 #include "apteryx-xml.h"
 
-#define DEBUG(fmt, args...) //printf (fmt, ## args);
+/* Debug */
+static bool apteryx_xml_debug = false;
+#define DEBUG(fmt, args...) \
+    if (apteryx_xml_debug) \
+    { \
+        syslog (LOG_DEBUG, fmt, ## args); \
+        printf (fmt, ## args); \
+    }
 
 /* Global pointer to the loaded schema */
 static sch_instance *api = NULL;
 /* A root user can write to read-only fields */
 static bool is_root = true;
+
+static int
+lua_apteryx_debug (lua_State *L)
+{
+    if (lua_gettop (L) < 1 || !lua_isboolean (L, 1))
+    {
+        luaL_error (L, "Invalid arguments: requires boolean");
+        return 0;
+    }
+    apteryx_xml_debug = lua_toboolean (L, 1);
+    return 0;
+}
 
 /* Push either a value or table onto the stack */
 static bool
@@ -227,11 +247,14 @@ __call (lua_State *L)
 
     /* Get passed in parameters */
     key = lua_tostring (L, 2);
-    value = lua_tostring (L, 3);
+    if (lua_isnil (L, 3))
+        value = "";
+    else
+        value = lua_tostring (L, 3);
 
     if (value)
     {
-        DEBUG ("__call: %s%s%s%s\n", path, key ? "/" : "", key ? : "", value);
+        DEBUG ("__call: %s%s%s = %s\n", path, key ? "/" : "", key ? : "", value);
     }
     else
     {
@@ -255,6 +278,35 @@ __call (lua_State *L)
             _iter = _iter->next;
         }
         g_list_free_full (paths, free);
+    }
+    else if (value)
+    {
+        /* Validate the node */
+        char *__path = g_strdup_printf ("%s/%s", path, key);
+        sch_node *node = sch_lookup (api, __path);
+        if (!node || (!is_root && !sch_is_writable (node)) || !sch_is_leaf (node))
+        {
+            /* Not accessible */
+            g_free ((gpointer) __path);
+            luaL_error (L, "\'%s\' not writable", key);
+            return 0;
+        }
+
+        /* Use the real path name */
+        char *name = sch_name (node);
+        if (strcmp (name , "*") != 0)
+        {
+            free (__path);
+            __path = g_strdup_printf ("%s/%s", path, name);
+        }
+        free (name);
+
+        /* Translate from the schema version */
+        char *val = sch_translate_from (node, g_strdup (value));
+        lua_pushboolean (L, apteryx_set (__path, val));
+        g_free (val);
+        g_free (__path);
+        return 1;
     }
     else
     {
@@ -338,6 +390,7 @@ luaopen_libapteryx_xml (lua_State *L)
 {
     /* Standard functions */
     static const luaL_Reg _apteryx_fns[] = {
+        { "debug", lua_apteryx_debug },
         { "api", lua_apteryx_api },
         { "valid", lua_apteryx_valid },
         { NULL, NULL }
@@ -357,6 +410,12 @@ luaopen_libapteryx_xml (lua_State *L)
 
 int
 luaopen_apteryx_xml (lua_State *L)
+{
+    return luaopen_libapteryx_xml (L);
+}
+
+int
+luaopen_xml (lua_State *L)
 {
     return luaopen_libapteryx_xml (L);
 }
