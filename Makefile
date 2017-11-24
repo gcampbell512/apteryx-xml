@@ -14,11 +14,13 @@ endif
 
 DESTDIR?=./
 PREFIX?=/usr/
+LIBDIR?=lib
 CC:=$(CROSS_COMPILE)gcc
 LD:=$(CROSS_COMPILE)ld
 PKG_CONFIG ?= pkg-config
 APTERYX_PATH ?=
 
+ABI_VERSION=1.4
 CFLAGS := $(CFLAGS) -g -O2
 EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
 EXTRA_CFLAGS += -I. $(shell $(PKG_CONFIG) --cflags glib-2.0)
@@ -38,17 +40,22 @@ endif
 EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0)
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0)
 
-all: libapteryx-xml.so libapteryx-schema.so
+all: libapteryx-xml.so libapteryx-schema.so apteryx-xml.so
 
-libapteryx-schema.so: schema.o
+libapteryx-schema.so.$(ABI_VERSION): schema.o
 	@echo "Creating library "$@""
-	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
+	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS) -Wl,-soname,$@
 
-libapteryx-xml.so: libapteryx-schema.so
-libapteryx-xml.so: lua.o
+lib%.so: lib%.so.$(ABI_VERSION)
+	@ln -s -f $< $@
+
+libapteryx-xml.so.$(ABI_VERSION): libapteryx-schema.so
+libapteryx-xml.so.$(ABI_VERSION): lua.o
 	@echo "Creating library "$@""
-	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $< $(EXTRA_LDFLAGS) -L. -lapteryx-schema
-	$(Q)ln -s -f $@ apteryx-xml.so
+	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $< $(EXTRA_LDFLAGS) -L. -lapteryx-schema -Wl,-soname,$@
+
+apteryx-xml.so: libapteryx-xml.so
+	$(Q)ln -s -f $< $@
 
 %.o: %.c
 	@echo "Compiling "$<""
@@ -82,14 +89,16 @@ test: unittest
 install: all
 	$(Q)install -d $(DESTDIR)/etc/apteryx/schema
 	$(Q)install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
-	$(Q)install -d $(DESTDIR)/$(PREFIX)/lib
-	$(Q)install -D libapteryx-xml.so $(DESTDIR)/$(PREFIX)/lib/
-	$(Q)install -D libapteryx-schema.so $(DESTDIR)/$(PREFIX)/lib/
+	$(Q)install -d $(DESTDIR)/$(PREFIX)/$(LIBDIR)
+	$(Q)install -D libapteryx-xml.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/
+	$(Q)install -D libapteryx-schema.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/
+	$(Q)ln -s libapteryx-xml.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/libapteryx-xml.so
+	$(Q)ln -s libapteryx-schema.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/libapteryx-schema.so
 	$(Q)install -d $(DESTDIR)/$(PREFIX)/include
 	$(Q)install -D apteryx-xml.h $(DESTDIR)/$(PREFIX)/include/
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx-schema.so libapteryx-xml.so apteryx-xml.so unittest *.o
+	@rm -f libapteryx-schema.so* libapteryx-xml.so* apteryx-xml.so unittest *.o
 
 .PHONY: all clean
