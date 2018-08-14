@@ -13,7 +13,7 @@
 	<xsl:template match="*[name()='module']">
 		<MODULE xmlns:apteryx="https://github.com/alliedtelesis/apteryx" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 		xsi:schemaLocation="https://github.com/alliedtelesis/apteryx
-		https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd">
+		https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd">
 		<xsl:apply-templates select="node()|@*"/>
 		</MODULE>
 	</xsl:template>
@@ -96,7 +96,9 @@
 			<xsl:variable name="file" select="concat($model,'.yin')"/>
 			<xsl:for-each select="document($file)/*[name() = 'module']/*[name() = 'grouping' and @name = $grouping]">
 				<xsl:if test="child::*[name() = 'description']">
+				<VALUE>
 					<xsl:attribute name="help"><xsl:value-of select="normalize-space(child::*[name() = 'description']/.)"/></xsl:attribute>
+				</VALUE>
 				</xsl:if>
 				<xsl:apply-templates select="node()|@*"/>
 			</xsl:for-each>
