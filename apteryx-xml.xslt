@@ -1,4 +1,4 @@
-<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns="https://github.com/alliedtelesis/apteryx">
 	<xsl:output omit-xml-declaration="yes" method="xml" encoding="UTF-8" indent="yes"/>
 	<xsl:strip-space elements="*"/>
 
@@ -11,7 +11,7 @@
 	</xsl:template>
 
 	<xsl:template match="*[name()='module']">
-		<MODULE xmlns:apteryx="https://github.com/alliedtelesis/apteryx" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		<MODULE xmlns="https://github.com/alliedtelesis/apteryx" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 		xsi:schemaLocation="https://github.com/alliedtelesis/apteryx
 		https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd">
 		<xsl:apply-templates select="node()|@*"/>
