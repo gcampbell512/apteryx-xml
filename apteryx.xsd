@@ -23,6 +23,7 @@
 				<xs:element ref="WATCH" minOccurs="0" maxOccurs="1" />
 				<xs:element ref="PROVIDE" minOccurs="0" maxOccurs="1" />
 				<xs:element ref="INDEX" minOccurs="0" maxOccurs="1" />
+				<xs:element ref="REFRESH" minOccurs="0" maxOccurs="1" />
 			</xs:sequence>
 			<xs:attribute name="name" type="xs:string" use="required" />
 			<xs:attribute name="default" type="xs:string" use="optional" />
