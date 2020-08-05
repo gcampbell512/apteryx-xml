@@ -4,12 +4,12 @@
 XmlParser = {};
 function XmlParser:FromXmlString(value)
     value = string.gsub(value, "&#x([%x]+)%;",
-        function(h) 
-            return string.char(tonumber(h,16)) 
+        function(h)
+            return string.char(tonumber(h,16))
         end);
     value = string.gsub(value, "&#([0-9]+)%;",
-        function(h) 
-            return string.char(tonumber(h,10)) 
+        function(h)
+            return string.char(tonumber(h,10))
         end);
     value = string.gsub (value, "&quot;", "\"");
     value = string.gsub (value, "&apos;", "'");
@@ -93,6 +93,7 @@ end
 function generate_header(xml,filename)
     path,name,type = filename:match("(.-)([^\\/]-%.?([^%.\\/]*))$")
     module = name:gsub(".xml", "")
+    module_macro = module:gsub("-", "_")
     print(string.format([[
 /**
  * @file %s.h
@@ -103,7 +104,7 @@ function generate_header(xml,filename)
  */
 #ifndef __%s_APTERYX_SCHEMA_H__
 #define __%s_APTERYX_SCHEMA_H__
-]], module:upper(),module:upper()))
+]], module_macro:upper(),module_macro:upper()))
 end
 
 function generate_defines(tbl, path, depth)
@@ -186,7 +187,7 @@ function generate_footer(filename)
     print(string.format([[
 
 #endif /*__%s_APTERYX_SCHEMA_H__*/
-]], module:upper()))
+]], module_macro:upper()))
 end
 
 if arg[1] == nil then
