@@ -569,6 +569,7 @@ sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GNo
         for (GNode *child = node->children; child; child = child->next) {
             DEBUG ("%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME(node), APTERYX_NAME(child));
             data = xmlNewNode (NULL, BAD_CAST name);
+            gnode_sort_children (sch_node_child_first (schema), child);
             for (GNode *field = child->children; field; field = field->next) {
                 sch_gnode_to_xml (instance, sch_node_child_first (schema), data, field, depth + 1);
             }
