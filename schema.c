@@ -28,7 +28,11 @@
 #include <syslog.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
+#include <apteryx.h>
 #include "apteryx-xml.h"
+
+#define DEBUG(fmt, args...) 
+// #define DEBUG(fmt, args...)  printf (fmt, ## args);
 
 /* List full paths for all XML files in the search path */
 static void
@@ -275,6 +279,69 @@ sch_lookup (sch_instance *schema, const char *path)
     return lookup_node ((xmlNode *) schema, path);
 }
 
+sch_node *
+sch_node_child (sch_node *parent, const char *child)
+{
+    xmlNode *xml = (xmlNode *) parent;
+    xmlNode *n = xml->children;
+
+    while (n)
+    {
+        if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
+        {
+            char *name = (char *) xmlGetProp (n, (xmlChar *) "name");
+            if (name && (name[0] == '*' || match_name (name, child)))
+            {
+                xmlFree (name);
+                break;
+            }
+            xmlFree (name);
+        }
+        n = n->next;
+    }
+    return n;
+}
+
+sch_node*
+sch_node_child_next (sch_node *parent, sch_node *node)
+{
+    xmlNode *xml = (xmlNode *) parent;
+    xmlNode *n = node ? ((xmlNode *) node)->next : xml->children;
+
+    while (n)
+    {
+        if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
+            break;
+        n = n->next;
+    }
+    return n;
+}
+
+sch_node*
+sch_node_child_first (sch_node *parent)
+{
+    return sch_node_child_next (parent, NULL);
+}
+
+bool
+sch_is_list (sch_node *node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    xmlNode *child = xml->children;
+
+    if (child && !child->next && child->type == XML_ELEMENT_NODE && child->name[0] == 'N')
+    {
+        char *name = (char *) xmlGetProp (child, (xmlChar *) "name");
+        if (name && g_strcmp0 (name ,"*") == 0) {
+            xmlFree (name);
+            return true;
+        }
+        if (name)
+            xmlFree (name);
+    }
+    return false;
+}
+
 bool
 sch_is_leaf (sch_node *node)
 {
@@ -397,4 +464,212 @@ char*
 sch_name (sch_node *node)
 {
     return (char *) xmlGetProp (node, (xmlChar *) "name");
+}
+
+/* Data translation/manipulation */
+
+static int
+get_index (GNode *node, sch_node *schema)
+{
+    int index = 0;
+    sch_node *n;
+    for (n = sch_node_child_first (schema); n; index++, n = sch_node_child_next (schema, n))
+        if (g_strcmp0(sch_name (n), (char *) node->data) == 0)
+            break;
+    return index;
+}
+
+static GNode *
+merge (GNode *left, GNode *right, sch_node *schema)
+{
+    if (!left)
+        return right;
+    if (!right)
+        return left;
+    int ri = get_index (right, schema);
+    int li = get_index (left, schema);
+    if (ri > li)
+    {
+        left->next = merge (left->next, right, schema);
+        left->next->prev = left;
+        left->prev = NULL;
+        return left;
+    }
+    else
+    {
+        right->next = merge (left, right->next, schema);
+        right->next->prev = right;
+        right->prev = NULL;
+        return right;
+    }
+}
+
+static GNode *
+split (GNode *head)
+{
+    GNode *left, *right;
+    left = right = head;
+    while (right->next && right->next->next)
+    {
+        right = right->next->next;
+        left = left->next;
+    }
+    right = left->next;
+    left->next = NULL;
+    return right;
+}
+
+static GNode *
+merge_sort (GNode *head, sch_node *schema)
+{
+    GNode *left, *right;
+    if (!head || !head->next)
+        return head;
+    left = head;
+    right = split (left);
+    left = merge_sort (left, schema);
+    right = merge_sort (right, schema);
+    return merge (left, right, schema);
+}
+
+static void
+gnode_sort_children (sch_node *schema, GNode *parent)
+{
+    if (parent)
+        parent->children = merge_sort (parent->children, schema);
+}
+
+xmlNode* 
+sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GNode *node, int depth)
+{
+    xmlNode *data = NULL;
+    char *name;
+
+    /* Get the actual node name */
+    if (depth == 0 && strlen (APTERYX_NAME (node)) == 1) {
+        return sch_gnode_to_xml (instance, schema, parent, node->children, depth);
+    } else if (depth == 0 && APTERYX_NAME( node)[0] == '/') {
+        name = APTERYX_NAME (node) + 1;
+    } else {
+        name = APTERYX_NAME (node);
+    }
+
+    /* Find schema node */
+    if (!schema)
+        schema = sch_lookup (instance, name);
+    else
+        schema = sch_node_child (schema, name);
+    if (schema == NULL) {
+        fprintf (stderr, "ERROR: No match for %s\n", name);
+        return NULL;
+    }
+
+    if (sch_is_list (schema)) {
+        apteryx_sort_children (node, g_strcmp0);
+        for (GNode *child = node->children; child; child = child->next) {
+            DEBUG ("%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME(node), APTERYX_NAME(child));
+            data = xmlNewNode (NULL, BAD_CAST name);
+            for (GNode *field = child->children; field; field = field->next) {
+                sch_gnode_to_xml (instance, sch_node_child_first (schema), data, field, depth + 1);
+            }
+            xmlAddChildList (parent, data);
+        }
+    }
+    else if (!sch_is_leaf (schema)) {
+        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME(node));
+        if (parent)
+            data = xmlNewChild (parent, NULL, BAD_CAST name, NULL);
+        else
+            data = xmlNewNode (NULL, BAD_CAST name);
+        gnode_sort_children (schema, node);
+        for (GNode *child = node->children; child; child = child->next) {
+            sch_gnode_to_xml (instance, schema, data, child, depth + 1);
+        }
+    }
+    else if (APTERYX_HAS_VALUE (node)) {
+        DEBUG ("%*s%s = %s\n", depth * 2, " ", APTERYX_NAME(node), APTERYX_VALUE(node));
+        data = xmlNewNode (NULL, BAD_CAST name);
+        xmlNodeSetContent (data, (const xmlChar *)APTERYX_VALUE(node));
+        if (parent)
+            xmlAddChildList (parent, data);
+    } 
+
+    return data;
+}
+
+GNode *
+sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlNode *xml, int depth)
+{
+    const char *name = (const char *) xml->name;
+    xmlNode *child;
+    const char *attr;
+    GNode *tree = NULL;
+    GNode *node = NULL;
+
+    /* Find schema node */
+    if (!schema)
+        schema = sch_lookup (instance, name);
+    else
+        schema = sch_node_child (schema, name);
+    if (schema == NULL) {
+        fprintf (stderr, "ERROR: No match for %s\n", name);
+        return NULL;
+    }
+
+    /* LIST */
+    if (sch_is_list (schema)) {
+        char *key = sch_name (sch_node_child_first (sch_node_child_first (schema)));
+        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        depth++;
+        tree = node = APTERYX_NODE (NULL, g_strdup (name));
+        if (xmlFirstElementChild (xml) && g_strcmp0 ((const char *)xmlFirstElementChild (xml)->name, key) == 0 &&
+            strlen ((char *) xmlNodeGetContent (xmlFirstElementChild (xml))) > 0) {
+            node = APTERYX_NODE (node, g_strdup ((char *) xmlNodeGetContent (xmlFirstElementChild (xml))));
+        }
+        else {
+            node = APTERYX_NODE (node, g_strdup ("*"));
+        }
+        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME(node));
+        schema = sch_node_child_first (schema);
+    }
+    /* CONTAINER */
+    else if (!sch_is_leaf (schema)) {
+        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        tree = node = APTERYX_NODE (NULL, g_strdup_printf ("%s%s", depth ? "" : "/", name));
+    }
+    /* LEAF */
+    else {
+        tree = node = APTERYX_NODE (NULL, g_strdup (name));
+        attr = (const char *) xmlGetProp (xml, BAD_CAST "operation");
+        if (g_strcmp0 (attr, "delete") == 0) {
+            APTERYX_NODE (tree, g_strdup (""));
+            DEBUG ("%*s%s = NULL\n", depth * 2, " ", name);
+        }
+        else if (strlen ((char *) xmlNodeGetContent (xml)) != 0) {
+            APTERYX_NODE (tree, g_strdup ((char *)xmlNodeGetContent (xml)));
+            DEBUG ("%*s%s = %s\n", depth * 2, " ", name, (char *)xmlNodeGetContent (xml));
+        }
+        else {
+            DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        }
+    }
+
+    //TODO - the only child is the key with value - GET expects /list/<key-value>/*
+    //TODO - multiple children and one of them is the key with value - GET expects the value to be dropped */
+    for (child = xmlFirstElementChild (xml); child; child = xmlNextElementSibling (child)) {
+        GNode *cn = sch_xml_to_gnode (instance, schema, NULL, child, depth + 1);
+        if (!cn) {
+            fprintf (stderr, "ERROR: No child match for %s\n", sch_name (sch_node_child_first (schema)));
+            apteryx_free_tree (node);
+            return NULL;
+        }
+        g_node_append (node, cn);
+    }
+
+    /* Get everything from here down if a trunk of a subtree */
+    if (!xmlFirstElementChild (xml) && sch_node_child_first (schema) && g_strcmp0 (APTERYX_NAME (node), "*") != 0) {
+        APTERYX_NODE (node, g_strdup ("*"));
+        DEBUG ("%*s%s\n", (depth + 1) * 2, " ", "*");
+    }
+    return tree;
 }
