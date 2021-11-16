@@ -45,8 +45,8 @@ typedef enum {
 } cb_lookup_required;
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
-xmlNode* sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GNode *node, int flags);
-GNode* sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlNode *xml, int flags);
+xmlNode* sch_gnode_to_xml (sch_instance *instance, sch_node *schema, GNode *node, int flags);
+GNode* sch_xml_to_gnode (sch_instance *instance, sch_node *schema, xmlNode *xml, int flags);
 #endif
 
 #endif /* _APTERYX_XML_H_ */

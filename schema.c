@@ -553,7 +553,7 @@ _sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GN
     /* Get the actual node name */
     if (depth == 0 && strlen (APTERYX_NAME (node)) == 1) {
         return _sch_gnode_to_xml (instance, schema, parent, node->children, flags, depth);
-    } else if (depth == 0 && APTERYX_NAME( node)[0] == '/') {
+    } else if (depth == 0 && APTERYX_NAME(node)[0] == '/') {
         name = APTERYX_NAME (node) + 1;
     } else {
         name = APTERYX_NAME (node);
@@ -565,7 +565,7 @@ _sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GN
     else
         schema = sch_node_child (schema, name);
     if (schema == NULL) {
-        fprintf (stderr, "ERROR: No match for %s\n", name);
+        DEBUG ("ERROR: No schema match for gnode %s\n", name);
         return NULL;
     }
 
@@ -604,9 +604,28 @@ _sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GN
 }
 
 xmlNode* 
-sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GNode *node, int flags)
+sch_gnode_to_xml (sch_instance *instance, sch_node *schema, GNode *node, int flags)
 {
-    return _sch_gnode_to_xml (instance, schema, parent, node, flags, 0);
+    if (node && g_node_n_children (node) > 1 && strlen (APTERYX_NAME (node)) == 1 ) {
+        xmlNode *first = NULL;
+        xmlNode *last = NULL;
+        xmlNode *next;
+
+        apteryx_sort_children (node, g_strcmp0);
+        for (GNode *child = node->children; child; child = child->next) {
+            next = _sch_gnode_to_xml (instance, schema, NULL, child, flags, 1);
+            if (next) {
+                if (last)
+                    xmlAddSibling (last, next);
+                last = next;
+                if (!first)
+                    first = next;
+            }
+        }
+        return first;
+    }
+    else
+        return _sch_gnode_to_xml (instance, schema, NULL, node, flags, 0);
 }
 
 static bool
@@ -634,7 +653,7 @@ _sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlN
     else
         schema = sch_node_child (schema, name);
     if (schema == NULL) {
-        fprintf (stderr, "ERROR: No match for %s\n", name);
+        DEBUG ("ERROR: No schema match for xml node %s\n", name);
         return NULL;
     }
 
@@ -710,7 +729,7 @@ _sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlN
 }
 
 GNode *
-sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlNode *xml, int flags)
+sch_xml_to_gnode (sch_instance *instance, sch_node *schema, xmlNode *xml, int flags)
 {
-    return _sch_xml_to_gnode (instance, schema, parent, xml, flags, 0);
+    return _sch_xml_to_gnode (instance, schema, NULL, xml, flags, 0);
 }
