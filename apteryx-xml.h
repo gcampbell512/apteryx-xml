@@ -40,10 +40,13 @@ char* sch_translate_to (sch_node *node, char *value);
 char* sch_translate_from (sch_node *node, char *value);
 
 /* Data translation/manipulation */
+typedef enum {
+    SCH_F_STRIP_KEY = 0x1,
+} cb_lookup_required;
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
-xmlNode* sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GNode *node, int depth);
-GNode* sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlNode *xml, int depth);
+xmlNode* sch_gnode_to_xml (sch_instance *instance, sch_node *schema, xmlNode *parent, GNode *node, int flags);
+GNode* sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlNode *xml, int flags);
 #endif
 
 #endif /* _APTERYX_XML_H_ */
