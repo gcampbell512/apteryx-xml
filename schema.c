@@ -663,14 +663,24 @@ _sch_xml_to_gnode (sch_instance *instance, sch_node *schema, GNode *parent, xmlN
         DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         depth++;
         tree = node = APTERYX_NODE (NULL, g_strdup (name));
-        if (xmlFirstElementChild (xml) && g_strcmp0 ((const char *)xmlFirstElementChild (xml)->name, key) == 0 &&
+        attr = (char *) xmlGetProp (xml, BAD_CAST key);
+        if (attr) {
+            node = APTERYX_NODE (node, attr);
+            DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME(node));
+            if (!(flags && SCH_F_STRIP_KEY) || xmlFirstElementChild (xml)) {
+                APTERYX_NODE (node, g_strdup (key));
+                DEBUG ("%*s%s\n", (depth + 1) * 2, " ", key);
+            }
+        }
+        else if (xmlFirstElementChild (xml) && g_strcmp0 ((const char *)xmlFirstElementChild (xml)->name, key) == 0 &&
             xml_node_has_content (xmlFirstElementChild (xml))) {
             node = APTERYX_NODE (node, (char *) xmlNodeGetContent (xmlFirstElementChild (xml)));
+            DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME(node));
         }
         else {
             node = APTERYX_NODE (node, g_strdup ("*"));
+            DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME(node));
         }
-        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME(node));
         schema = sch_node_child_first (schema);
     }
     /* CONTAINER */
