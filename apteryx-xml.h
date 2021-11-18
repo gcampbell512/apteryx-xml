@@ -22,35 +22,38 @@
 /* Schema */
 typedef void sch_instance;
 typedef void sch_node;
-sch_instance* sch_load (const char *path);
-void sch_free (sch_instance *schema);
-sch_node* sch_lookup (sch_instance *schema, const char *path);
-char *sch_dump_xml (sch_instance *schema);
+sch_instance *sch_load (const char *path);
+void sch_free (sch_instance * schema);
+sch_node *sch_lookup (sch_instance * schema, const char *path);
+char *sch_dump_xml (sch_instance * schema);
 
-sch_node* sch_node_child (sch_node *parent, const char *name);
-sch_node* sch_node_child_first (sch_node *parent);
-sch_node* sch_node_child_next (sch_node *parent, sch_node *node);
+sch_node *sch_node_child (sch_node * parent, const char *name);
+sch_node *sch_node_child_first (sch_node * parent);
+sch_node *sch_node_child_next (sch_node * parent, sch_node * node);
 
-char* sch_name (sch_node *node);
-char* sch_path (sch_node *node);
-bool sch_is_leaf (sch_node *node);
-bool sch_is_list (sch_node *node);
-char* sch_list_key (sch_node *node);
-bool sch_is_readable (sch_node *node);
-bool sch_is_writable (sch_node *node);
-bool sch_is_config (sch_node *node);
-char* sch_translate_to (sch_node *node, char *value);
-char* sch_translate_from (sch_node *node, char *value);
+char *sch_name (sch_node * node);
+char *sch_path (sch_node * node);
+bool sch_is_leaf (sch_node * node);
+bool sch_is_list (sch_node * node);
+char *sch_list_key (sch_node * node);
+bool sch_is_readable (sch_node * node);
+bool sch_is_writable (sch_node * node);
+bool sch_is_config (sch_node * node);
+char *sch_translate_to (sch_node * node, char *value);
+char *sch_translate_from (sch_node * node, char *value);
 bool sch_validate_pattern (sch_node * node, const char *value);
 
 /* Data translation/manipulation */
-typedef enum {
+typedef enum
+{
     SCH_F_STRIP_KEY = 0x1,
 } cb_lookup_required;
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
-xmlNode* sch_gnode_to_xml (sch_instance *instance, sch_node *schema, GNode *node, int flags);
-GNode* sch_xml_to_gnode (sch_instance *instance, sch_node *schema, xmlNode *xml, int flags);
+xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node,
+                           int flags);
+GNode *sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml,
+                         int flags);
 #endif
 
 #endif /* _APTERYX_XML_H_ */

@@ -61,7 +61,8 @@ assert_apteryx_empty (void)
         char *path = (char *) (iter->data);
         if (strncmp (TEST_PATH, path, strlen (TEST_PATH)) == 0)
         {
-            if (ret) fprintf (stderr, "\n");
+            if (ret)
+                fprintf (stderr, "\n");
             fprintf (stderr, "ERROR: Node still set: %s\n", path);
             ret = false;
         }
@@ -74,9 +75,8 @@ static inline unsigned long
 _memory_usage (void)
 {
     unsigned long memory;
-    FILE *f = fopen ("/proc/self/statm","r");
-    CU_ASSERT (1 == fscanf (f, "%*d %ld %*d %*d %*d %*d %*d", &memory))
-    fclose (f);
+    FILE *f = fopen ("/proc/self/statm", "r");
+    CU_ASSERT (1 == fscanf (f, "%*d %ld %*d %*d %*d %*d %*d", &memory)) fclose (f);
     return memory * getpagesize () / 1024;
 }
 
@@ -87,35 +87,33 @@ _write_xml ()
     if (xml)
     {
         fprintf (xml,
-"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-"<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
-"    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
-"    xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
-"    https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
-"    <NODE name=\"test\" help=\"this is a test node\">\n"
-"        <NODE name=\"debug\" mode=\"rw\" default=\"0\" help=\"Debug configuration\" pattern=\"^(0|1)$\">\n"
-"            <VALUE name=\"disable\" value=\"0\" help=\"Debugging is disabled\" />\n"
-"            <VALUE name=\"enable\" value=\"1\" help=\"Debugging is enabled\" />\n"
-"        </NODE>\n"
-"        <NODE name=\"list\" help=\"this is a list of stuff\">\n"
-"            <NODE name=\"*\" help=\"the list item\">\n"
-"                <NODE name=\"name\" mode=\"rw\" help=\"this is the list key\"/>\n"
-"                <NODE name=\"type\" mode=\"rw\" default=\"1\" help=\"this is the list type\">\n"
-"                    <VALUE name=\"big\" value=\"1\"/>\n"
-"                    <VALUE name=\"little\" value=\"2\"/>\n"
-"                </NODE>\n"
-"                <NODE name=\"sub-list\" help=\"this is a list of stuff attached to a list\">\n"
-"                    <NODE name=\"*\" help=\"the sublist item\">\n"
-"                        <NODE name=\"i-d\" mode=\"rw\" help=\"this is the sublist key\"/>\n"
-"                    </NODE>\n"
-"                </NODE>\n"
-"            </NODE>\n"
-"        </NODE>\n"
-"        <NODE name=\"trivial-list\" help=\"this is a simple list of stuff\">\n"
-"            <NODE name=\"*\" help=\"the list item\" />\n"
-"        </NODE>\n"
-"    </NODE>\n"
-"</MODULE>\n");
+                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                 "<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
+                 "    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+                 "    xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
+                 "    https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
+                 "    <NODE name=\"test\" help=\"this is a test node\">\n"
+                 "        <NODE name=\"debug\" mode=\"rw\" default=\"0\" help=\"Debug configuration\" pattern=\"^(0|1)$\">\n"
+                 "            <VALUE name=\"disable\" value=\"0\" help=\"Debugging is disabled\" />\n"
+                 "            <VALUE name=\"enable\" value=\"1\" help=\"Debugging is enabled\" />\n"
+                 "        </NODE>\n"
+                 "        <NODE name=\"list\" help=\"this is a list of stuff\">\n"
+                 "            <NODE name=\"*\" help=\"the list item\">\n"
+                 "                <NODE name=\"name\" mode=\"rw\" help=\"this is the list key\"/>\n"
+                 "                <NODE name=\"type\" mode=\"rw\" default=\"1\" help=\"this is the list type\">\n"
+                 "                    <VALUE name=\"big\" value=\"1\"/>\n"
+                 "                    <VALUE name=\"little\" value=\"2\"/>\n"
+                 "                </NODE>\n"
+                 "                <NODE name=\"sub-list\" help=\"this is a list of stuff attached to a list\">\n"
+                 "                    <NODE name=\"*\" help=\"the sublist item\">\n"
+                 "                        <NODE name=\"i-d\" mode=\"rw\" help=\"this is the sublist key\"/>\n"
+                 "                    </NODE>\n"
+                 "                </NODE>\n"
+                 "            </NODE>\n"
+                 "        </NODE>\n"
+                 "        <NODE name=\"trivial-list\" help=\"this is a simple list of stuff\">\n"
+                 "            <NODE name=\"*\" help=\"the list item\" />\n"
+                 "        </NODE>\n" "    </NODE>\n" "</MODULE>\n");
         fclose (xml);
     }
 }
@@ -137,9 +135,9 @@ _run_lua (char *script)
         if (res == 0)
             res = lua_pcall (L, 0, 0, 0);
         if (res != 0)
-            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+            fprintf (stderr, "%s\n", lua_tostring (L, -1));
         CU_ASSERT (res == 0);
-        line = strtok (NULL,"\n");
+        line = strtok (NULL, "\n");
     }
     lua_close (L);
     free (buffer);
@@ -157,13 +155,12 @@ void
 test_lua_api_set_get (void)
 {
     _write_xml ();
-    CU_ASSERT (_run_lua (
-        "api = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')           \n"
-        "api.test.debug = 'enable'                                        \n"
-        "assert(api.test.debug == 'enable')                               \n"
-        "api.test.debug = nil                                             \n"
-        "assert(api.test.debug == 'disable')                              \n"
-    ));
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')           \n"
+                "api.test.debug = 'enable'                                        \n"
+                "assert(api.test.debug == 'enable')                               \n"
+                "api.test.debug = nil                                             \n"
+                "assert(api.test.debug == 'disable')                              \n"));
     CU_ASSERT (assert_apteryx_empty ());
     unlink (TEST_SCHEMA_FILE);
 }
@@ -172,13 +169,12 @@ void
 test_lua_api_list (void)
 {
     _write_xml ();
-    CU_ASSERT (_run_lua (
-        "api = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')           \n"
-        "api.test.list('cat-nip').sub_list('dog').i_d = '1'               \n"
-        "assert(api.test.list('cat-nip').sub_list('dog').i_d == '1')      \n"
-        "api.test.list('cat-nip').sub_list('dog').i_d = nil               \n"
-        "assert(api.test.list('cat-nip').sub_list('dog').i_d == nil)      \n"
-    ));
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')           \n"
+                "api.test.list('cat-nip').sub_list('dog').i_d = '1'               \n"
+                "assert(api.test.list('cat-nip').sub_list('dog').i_d == '1')      \n"
+                "api.test.list('cat-nip').sub_list('dog').i_d = nil               \n"
+                "assert(api.test.list('cat-nip').sub_list('dog').i_d == nil)      \n"));
     CU_ASSERT (assert_apteryx_empty ());
     unlink (TEST_SCHEMA_FILE);
 }
@@ -187,13 +183,12 @@ void
 test_lua_api_trivial_list (void)
 {
     _write_xml ();
-    CU_ASSERT (_run_lua (
-        "api = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')           \n"
-        "api.test.trivial_list('cat-nip', 'cat-nip')                      \n"
-        "assert(api.test.trivial_list('cat-nip') == 'cat-nip')            \n"
-        "api.test.trivial_list('cat-nip', nil)                            \n"
-        "assert(api.test.trivial_list('cat-nip') == nil)                  \n"
-    ));
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')           \n"
+                "api.test.trivial_list('cat-nip', 'cat-nip')                      \n"
+                "assert(api.test.trivial_list('cat-nip') == 'cat-nip')            \n"
+                "api.test.trivial_list('cat-nip', nil)                            \n"
+                "assert(api.test.trivial_list('cat-nip') == nil)                  \n"));
     CU_ASSERT (assert_apteryx_empty ());
     unlink (TEST_SCHEMA_FILE);
 }
@@ -202,25 +197,24 @@ void
 test_lua_api_search (void)
 {
     _write_xml ();
-    CU_ASSERT (_run_lua (
-        "api = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')           \n"
-        "api.test.list('cat-nip').sub_list('dog').i_d = '1'               \n"
-        "api.test.list('cat-nip').sub_list('cat').i_d = '2'               \n"
-        "api.test.list('cat-nip').sub_list('mouse').i_d = '3'             \n"
-        "api.test.list('cat_nip').sub_list('bat').i_d = '4'               \n"
-        "api.test.list('cat_nip').sub_list('frog').i_d = '5'              \n"
-        "api.test.list('cat_nip').sub_list('horse').i_d = '6'             \n"
-        "cats1 = api.test.list('cat-nip').sub_list()                      \n"
-        "assert(#cats1 == 3)                                              \n"
-        "cats2 = api.test.list('cat_nip').sub_list()                      \n"
-        "assert(#cats2 == 3)                                              \n"
-        "api.test.list('cat-nip').sub_list('dog').i_d = nil               \n"
-        "api.test.list('cat-nip').sub_list('cat').i_d = nil               \n"
-        "api.test.list('cat-nip').sub_list('mouse').i_d = nil             \n"
-        "api.test.list('cat_nip').sub_list('bat').i_d = nil               \n"
-        "api.test.list('cat_nip').sub_list('frog').i_d = nil              \n"
-        "api.test.list('cat_nip').sub_list('horse').i_d = nil             \n"
-    ));
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')           \n"
+                "api.test.list('cat-nip').sub_list('dog').i_d = '1'               \n"
+                "api.test.list('cat-nip').sub_list('cat').i_d = '2'               \n"
+                "api.test.list('cat-nip').sub_list('mouse').i_d = '3'             \n"
+                "api.test.list('cat_nip').sub_list('bat').i_d = '4'               \n"
+                "api.test.list('cat_nip').sub_list('frog').i_d = '5'              \n"
+                "api.test.list('cat_nip').sub_list('horse').i_d = '6'             \n"
+                "cats1 = api.test.list('cat-nip').sub_list()                      \n"
+                "assert(#cats1 == 3)                                              \n"
+                "cats2 = api.test.list('cat_nip').sub_list()                      \n"
+                "assert(#cats2 == 3)                                              \n"
+                "api.test.list('cat-nip').sub_list('dog').i_d = nil               \n"
+                "api.test.list('cat-nip').sub_list('cat').i_d = nil               \n"
+                "api.test.list('cat-nip').sub_list('mouse').i_d = nil             \n"
+                "api.test.list('cat_nip').sub_list('bat').i_d = nil               \n"
+                "api.test.list('cat_nip').sub_list('frog').i_d = nil              \n"
+                "api.test.list('cat_nip').sub_list('horse').i_d = nil             \n"));
     CU_ASSERT (assert_apteryx_empty ());
     unlink (TEST_SCHEMA_FILE);
 }
@@ -237,11 +231,12 @@ test_lua_load_api_memory (void)
     before = _memory_usage ();
     L = luaL_newstate ();
     luaL_openlibs (L);
-    res = luaL_loadstring (L, "apteryx = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')");
+    res =
+        luaL_loadstring (L, "apteryx = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')");
     if (res == 0)
         res = lua_pcall (L, 0, 0, 0);
     if (res != 0)
-        fprintf (stderr, "%s\n", lua_tostring(L, -1));
+        fprintf (stderr, "%s\n", lua_tostring (L, -1));
     after = _memory_usage ();
     lua_close (L);
     printf ("%ldkb ... ", (after - before));
@@ -259,9 +254,10 @@ test_lua_load_api_performance (void)
     start = get_time_us ();
     for (i = 0; i < 10; i++)
     {
-        CU_ASSERT (_run_lua ("apteryx = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')"));
+        CU_ASSERT (_run_lua
+                   ("apteryx = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')"));
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 10);
+    printf ("%" PRIu64 "us ... ", (get_time_us () - start) / 10);
     CU_ASSERT (assert_apteryx_empty ());
     unlink (TEST_SCHEMA_FILE);
 }
@@ -277,36 +273,38 @@ test_lua_api_perf_get ()
     for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH "/list/%d/name", i) > 0);
         apteryx_set (path, "private");
         free (path);
     }
     L = luaL_newstate ();
     luaL_openlibs (L);
-    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')") == 0);
-    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
+    CU_ASSERT (luaL_loadstring
+               (L, "apteryx = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')") == 0);
+    CU_ASSERT (lua_pcall (L, 0, 0, 0) == 0);
     start = get_time_us ();
     for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *cmd = NULL;
         int res;
-        CU_ASSERT (asprintf(&cmd, "assert(apteryx.test.list('%d').name == 'private')", i) > 0);
+        CU_ASSERT (asprintf (&cmd, "assert(apteryx.test.list('%d').name == 'private')", i) >
+                   0);
         res = luaL_loadstring (L, cmd);
         if (res == 0)
             res = lua_pcall (L, 0, 0, 0);
         if (res != 0)
-            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+            fprintf (stderr, "%s\n", lua_tostring (L, -1));
         if (res != 0)
             goto exit;
         free (cmd);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
+    printf ("%" PRIu64 "us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+  exit:
     lua_close (L);
     for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH "/list/%d/name", i) > 0);
         CU_ASSERT (apteryx_set (path, NULL));
         free (path);
     }
@@ -324,30 +322,31 @@ test_lua_api_perf_set ()
     _write_xml ();
     L = luaL_newstate ();
     luaL_openlibs (L);
-    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx-xml').api('"TEST_SCHEMA_PATH"')") == 0);
-    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
+    CU_ASSERT (luaL_loadstring
+               (L, "apteryx = require('apteryx-xml').api('" TEST_SCHEMA_PATH "')") == 0);
+    CU_ASSERT (lua_pcall (L, 0, 0, 0) == 0);
     start = get_time_us ();
     for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *cmd = NULL;
         int res;
-        CU_ASSERT (asprintf(&cmd, "apteryx.test.list('%d').name = 'private'", i) > 0);
+        CU_ASSERT (asprintf (&cmd, "apteryx.test.list('%d').name = 'private'", i) > 0);
         res = luaL_loadstring (L, cmd);
         if (res == 0)
             res = lua_pcall (L, 0, 0, 0);
         if (res != 0)
-            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+            fprintf (stderr, "%s\n", lua_tostring (L, -1));
         if (res != 0)
             goto exit;
         free (cmd);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
+    printf ("%" PRIu64 "us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+  exit:
     lua_close (L);
     for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH "/list/%d/name", i) > 0);
         CU_ASSERT (apteryx_set (path, NULL));
         free (path);
     }
@@ -368,20 +367,20 @@ suite_clean (void)
 }
 
 CU_TestInfo tests_lua[] = {
-    { "lua load module", test_lua_api_load },
-    { "lua api set get", test_lua_api_set_get },
-    { "lua api list", test_lua_api_list },
-    { "lua api trivial list", test_lua_api_trivial_list },
-    { "lua api search", test_lua_api_search },
-    { "lua load api memory usage", test_lua_load_api_memory },
-    { "lua load api performance", test_lua_load_api_performance },
-    { "lua api get performance", test_lua_api_perf_get },
-    { "lua api set performance", test_lua_api_perf_set },
+    {"lua load module", test_lua_api_load},
+    {"lua api set get", test_lua_api_set_get},
+    {"lua api list", test_lua_api_list},
+    {"lua api trivial list", test_lua_api_trivial_list},
+    {"lua api search", test_lua_api_search},
+    {"lua load api memory usage", test_lua_load_api_memory},
+    {"lua load api performance", test_lua_load_api_performance},
+    {"lua api get performance", test_lua_api_perf_get},
+    {"lua api set performance", test_lua_api_perf_set},
     CU_TEST_INFO_NULL,
 };
 
 static CU_SuiteInfo suites[] = {
-    { "LUA API", suite_init, suite_clean, NULL, NULL, tests_lua },
+    {"LUA API", suite_init, suite_clean, NULL, NULL, tests_lua},
     CU_SUITE_INFO_NULL,
 };
 
@@ -427,7 +426,8 @@ main (int argc, char *argv[])
             all = true;
         else if (filter)
             all = false;
-        CU_pSuite pSuite = CU_add_suite(suite->pName, suite->pInitFunc, suite->pCleanupFunc);
+        CU_pSuite pSuite =
+            CU_add_suite (suite->pName, suite->pInitFunc, suite->pCleanupFunc);
         if (pSuite == NULL)
         {
             fprintf (stderr, "suite registration failed - %s\n", CU_get_error_msg ());
@@ -438,9 +438,10 @@ main (int argc, char *argv[])
         {
             if (all || (filter && strstr (test->pName, filter) != NULL))
             {
-                if (CU_add_test(pSuite, test->pName, test->pTestFunc) == NULL)
+                if (CU_add_test (pSuite, test->pName, test->pTestFunc) == NULL)
                 {
-                    fprintf (stderr, "test registration failed - %s\n", CU_get_error_msg ());
+                    fprintf (stderr, "test registration failed - %s\n",
+                             CU_get_error_msg ());
                     exit (EXIT_FAILURE);
                 }
             }

@@ -43,7 +43,7 @@ static sch_instance *api = NULL;
 static bool is_root = true;
 
 static int
-lua_apteryx_debug (lua_State *L)
+lua_apteryx_debug (lua_State * L)
 {
     if (lua_gettop (L) < 1 || !lua_isboolean (L, 1))
     {
@@ -56,7 +56,7 @@ lua_apteryx_debug (lua_State *L)
 
 /* Push either a value or table onto the stack */
 static bool
-push_node (lua_State *L, sch_instance *api, const char *path, const char *key)
+push_node (lua_State * L, sch_instance * api, const char *path, const char *key)
 {
     char *__path;
     sch_node *node;
@@ -75,7 +75,7 @@ push_node (lua_State *L, sch_instance *api, const char *path, const char *key)
 
     /* Use the real path name */
     name = sch_name (node);
-    if (strcmp (name , "*") != 0)
+    if (strcmp (name, "*") != 0)
     {
         free (__path);
         __path = g_strdup_printf ("%s/%s", path, name);
@@ -117,7 +117,7 @@ push_node (lua_State *L, sch_instance *api, const char *path, const char *key)
 }
 
 static int
-__index (lua_State *L)
+__index (lua_State * L)
 {
     const char *path;
     const char *key;
@@ -159,7 +159,7 @@ __index (lua_State *L)
 }
 
 static int
-__newindex (lua_State *L)
+__newindex (lua_State * L)
 {
     const char *path;
     const char *key;
@@ -206,7 +206,7 @@ __newindex (lua_State *L)
 
     /* Use the real path name */
     name = sch_name (node);
-    if (strcmp (name , "*") != 0)
+    if (strcmp (name, "*") != 0)
     {
         free (__path);
         __path = g_strdup_printf ("%s/%s", path, name);
@@ -222,7 +222,7 @@ __newindex (lua_State *L)
 }
 
 static int
-__call (lua_State *L)
+__call (lua_State * L)
 {
     const char *path;
     const char *key;
@@ -294,7 +294,7 @@ __call (lua_State *L)
 
         /* Use the real path name */
         char *name = sch_name (node);
-        if (strcmp (name , "*") != 0)
+        if (strcmp (name, "*") != 0)
         {
             free (__path);
             __path = g_strdup_printf ("%s/%s", path, name);
@@ -322,14 +322,14 @@ __call (lua_State *L)
 }
 
 static int
-lua_apteryx_api (lua_State *L)
+lua_apteryx_api (lua_State * L)
 {
     /* Metatable functions */
     static const luaL_Reg _apteryx_mt[] = {
-        { "__index", __index },
-        { "__newindex", __newindex },
-        { "__call", __call },
-        { NULL, NULL }
+        {"__index", __index},
+        {"__newindex", __newindex},
+        {"__call", __call},
+        {NULL, NULL}
     };
     const char *path = ".";
     if (lua_gettop (L) == 1 && lua_isstring (L, 1))
@@ -364,7 +364,7 @@ lua_apteryx_api (lua_State *L)
 }
 
 static int
-lua_apteryx_valid (lua_State *L)
+lua_apteryx_valid (lua_State * L)
 {
     if (lua_gettop (L) != 1 || !lua_isstring (L, 1))
     {
@@ -386,14 +386,14 @@ lua_apteryx_valid (lua_State *L)
 }
 
 int
-luaopen_libapteryx_xml (lua_State *L)
+luaopen_libapteryx_xml (lua_State * L)
 {
     /* Standard functions */
     static const luaL_Reg _apteryx_fns[] = {
-        { "debug", lua_apteryx_debug },
-        { "api", lua_apteryx_api },
-        { "valid", lua_apteryx_valid },
-        { NULL, NULL }
+        {"debug", lua_apteryx_debug},
+        {"api", lua_apteryx_api},
+        {"valid", lua_apteryx_valid},
+        {NULL, NULL}
     };
 
     /* Initialise Apteryx */
@@ -409,13 +409,13 @@ luaopen_libapteryx_xml (lua_State *L)
 }
 
 int
-luaopen_apteryx_xml (lua_State *L)
+luaopen_apteryx_xml (lua_State * L)
 {
     return luaopen_libapteryx_xml (L);
 }
 
 int
-luaopen_xml (lua_State *L)
+luaopen_xml (lua_State * L)
 {
     return luaopen_libapteryx_xml (L);
 }
