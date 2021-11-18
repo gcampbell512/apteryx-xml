@@ -25,19 +25,23 @@ typedef void sch_node;
 sch_instance* sch_load (const char *path);
 void sch_free (sch_instance *schema);
 sch_node* sch_lookup (sch_instance *schema, const char *path);
+char *sch_dump_xml (sch_instance *schema);
 
 sch_node* sch_node_child (sch_node *parent, const char *name);
 sch_node* sch_node_child_first (sch_node *parent);
 sch_node* sch_node_child_next (sch_node *parent, sch_node *node);
 
+char* sch_name (sch_node *node);
+char* sch_path (sch_node *node);
 bool sch_is_leaf (sch_node *node);
 bool sch_is_list (sch_node *node);
+char* sch_list_key (sch_node *node);
 bool sch_is_readable (sch_node *node);
 bool sch_is_writable (sch_node *node);
 bool sch_is_config (sch_node *node);
-char* sch_name (sch_node *node);
 char* sch_translate_to (sch_node *node, char *value);
 char* sch_translate_from (sch_node *node, char *value);
+bool sch_validate_pattern (sch_node * node, const char *value);
 
 /* Data translation/manipulation */
 typedef enum {

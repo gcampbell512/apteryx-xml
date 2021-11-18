@@ -28,6 +28,7 @@
 #include <syslog.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
+#include <regex.h>
 #include <apteryx.h>
 #include "apteryx-xml.h"
 
@@ -203,6 +204,17 @@ match_name (const char *s1, const char *s2)
     return false;
 }
 
+char *
+sch_dump_xml (sch_instance *schema)
+{
+    xmlNode *xml = (xmlNode *) schema;
+    xmlChar *xmlbuf = NULL;
+    int bufsize;
+
+    xmlDocDumpFormatMemory (xml->doc, &xmlbuf, &bufsize, 1);
+    return (char *) xmlbuf;
+}
+
 static xmlNode *
 lookup_node (xmlNode *node, const char *path)
 {
@@ -323,23 +335,32 @@ sch_node_child_first (sch_node *parent)
     return sch_node_child_next (parent, NULL);
 }
 
-bool
-sch_is_list (sch_node *node)
+char*
+sch_name (sch_node *node)
 {
-    xmlNode *xml = (xmlNode *) node;
-    xmlNode *child = xml->children;
+    return (char *) xmlGetProp (node, (xmlChar *) "name");
+}
 
-    if (child && !child->next && child->type == XML_ELEMENT_NODE && child->name[0] == 'N')
+char *
+sch_path (sch_node * node)
+{
+    char *path = NULL;
+
+    while (node)
     {
-        char *name = (char *) xmlGetProp (child, (xmlChar *) "name");
-        if (name && g_strcmp0 (name ,"*") == 0) {
-            xmlFree (name);
-            return true;
+        char *tmp = NULL;
+        char *name = (char *) xmlGetProp (node, (xmlChar *) "name");
+        if (name == NULL)
+        {
+            break;
         }
-        if (name)
-            xmlFree (name);
+        tmp = g_strdup_printf ("/%s%s", name, path ? : "");
+        free (path);
+        path = tmp;
+        free (name);
+        node = ((xmlNode *) node)->parent;
     }
-    return false;
+    return path;
 }
 
 bool
@@ -360,6 +381,35 @@ sch_is_leaf (sch_node *node)
         }
     }
     return true;
+}
+
+bool
+sch_is_list (sch_node *node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    xmlNode *child = xml->children;
+
+    if (child && !child->next && child->type == XML_ELEMENT_NODE && child->name[0] == 'N')
+    {
+        char *name = (char *) xmlGetProp (child, (xmlChar *) "name");
+        if (name && g_strcmp0 (name ,"*") == 0) {
+            xmlFree (name);
+            return true;
+        }
+        if (name)
+            xmlFree (name);
+    }
+    return false;
+}
+
+char*
+sch_list_key (sch_node *node)
+{
+    char *key = NULL;
+
+    if (sch_is_list (node) && sch_node_child_first (sch_node_child_first (node)))
+        key = sch_name (sch_node_child_first (sch_node_child_first (node)));
+    return key;
 }
 
 bool
@@ -460,10 +510,76 @@ sch_translate_from (sch_node *node, char *value)
     return value;
 }
 
-char*
-sch_name (sch_node *node)
+bool
+sch_validate_pattern (sch_node * node, const char *value)
 {
-    return (char *) xmlGetProp (node, (xmlChar *) "name");
+    xmlNode *xml = (xmlNode *) node;
+    char *pattern = (char *) xmlGetProp (node, (xmlChar *) "pattern");
+    if (pattern)
+    {
+        char message[100];
+        regex_t regex_obj;
+        int rc;
+
+        rc = regcomp (&regex_obj, pattern, REG_EXTENDED);
+        if (rc != 0)
+        {
+            regerror (rc, NULL, message, sizeof (message));
+            DEBUG ("SCHEMA: %i (\"%s\") for regex %s", rc, message, pattern);
+            xmlFree (pattern);
+            return false;
+        }
+
+        rc = regexec (&regex_obj, value, 0, NULL, 0);
+        regfree (&regex_obj);
+        if (rc == REG_ESPACE)
+        {
+            regerror (rc, NULL, message, sizeof (message));
+            DEBUG ("SCHEMA: %i (\"%s\") for regex %s", rc, message, pattern);
+            xmlFree (pattern);
+            return false;
+        }
+
+        xmlFree (pattern);
+        return (rc == 0);
+    }
+    else if (xml->children)
+    {
+        bool enumeration = false;
+        int rc = false;
+        xmlNode *n;
+        char *val;
+
+        for (n = xml->children; n && value; n = n->next)
+        {
+            if (n->type == XML_ELEMENT_NODE && n->name[0] == 'V')
+            {
+                enumeration = true;
+                val = (char *) xmlGetProp (n, (xmlChar *) "name");
+                if (val && strcmp (value, val) == 0)
+                {
+                    free (val);
+                    rc = true;
+                    break;
+                }
+                free (val);
+                val = (char *) xmlGetProp (n, (xmlChar *) "value");
+                if (val && strcmp (value, val) == 0)
+                {
+                    free (val);
+                    rc = true;
+                    break;
+                }
+                free (val);
+            }
+        }
+        if (enumeration && !rc)
+        {
+            DEBUG ("SCHEMA: \"%s\" not in enumeration\n", value);
+            return false;
+        }
+    }
+    return true;
 }
 
 /* Data translation/manipulation */
