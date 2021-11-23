@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib
+
+Name: apteryx-xml
+Description: An Apteryx database schema defined in XML
+Version: 1.0.0
+Requires: glib-2.0 apteryx
+Cflags: -I${includedir}
+Libs: -L${libdir} -lapteryx-schema

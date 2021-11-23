@@ -99,6 +99,7 @@ install: all
 	$(Q)ln -s libapteryx-schema.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/libapteryx-schema.so
 	$(Q)install -d $(DESTDIR)/$(PREFIX)/include
 	$(Q)install -D apteryx-xml.h $(DESTDIR)/$(PREFIX)/include/
+	$(Q)install -D apteryx-xml.pc $(DESTDIR)/$(PREFIX)/lib/pkgconfig/
 
 clean:
 	@echo "Cleaning..."
