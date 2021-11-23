@@ -217,11 +217,13 @@ sch_dump_xml (sch_instance * schema)
 }
 
 static xmlNode *
-lookup_node (xmlNode * node, const char *path)
+lookup_node (xmlNode * node, const char *path, char **namespace)
 {
     xmlNode *n;
     char *name, *mode;
     char *key = NULL;
+    char *ns = NULL;
+    char *lk = NULL;
     int len;
 
     if (!node)
@@ -245,6 +247,18 @@ lookup_node (xmlNode * node, const char *path)
         key = strdup (path);
         path = NULL;
     }
+    if (namespace)
+    {
+        ns = strchr (key, ':');
+        if (ns)
+        {
+            len = ns - key;
+            free (*namespace);
+            *namespace = key;
+            (*namespace)[len] = '\0';
+            key = strndup (key + len + 1, strlen (key) - len - 1);
+        }
+    }
     for (n = node->children; n; n = n->next)
     {
         if (n->type != XML_ELEMENT_NODE)
@@ -252,6 +266,12 @@ lookup_node (xmlNode * node, const char *path)
             continue;
         }
         name = (char *) xmlGetProp (n, (xmlChar *) "name");
+        if (name && name[0] == '*')
+        {
+            lk = strchr (key, '=');
+            if (lk)
+                key[lk - key] = '\0';
+        }
         if (name && (name[0] == '*' || match_name (name, key)))
         {
             free (key);
@@ -263,14 +283,14 @@ lookup_node (xmlNode * node, const char *path)
                     xmlFree (name);
                     xmlFree (mode);
                     /* restart search from root */
-                    return lookup_node (xmlDocGetRootElement (node->doc), path);
+                    return lookup_node (xmlDocGetRootElement (node->doc), path, namespace);
                 }
                 xmlFree (name);
                 if (mode)
                 {
                     xmlFree (mode);
                 }
-                return lookup_node (n, path);
+                return lookup_node (n, path, namespace);
             }
             xmlFree (name);
             return n;
@@ -289,7 +309,16 @@ lookup_node (xmlNode * node, const char *path)
 sch_node *
 sch_lookup (sch_instance * schema, const char *path)
 {
-    return lookup_node ((xmlNode *) schema, path);
+    return lookup_node ((xmlNode *) schema, path, NULL);
+}
+
+sch_node *
+sch_ns_lookup (sch_instance * schema, const char *namespace, const char *path)
+{
+    char *ns = namespace ? strdup (namespace) : NULL;
+    sch_node *node = lookup_node ((xmlNode *) schema, path, &ns);
+    free (ns);
+    return node;
 }
 
 sch_node *
