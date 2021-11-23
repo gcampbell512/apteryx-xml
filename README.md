@@ -3,7 +3,7 @@ An Apteryx database schema defined in XML
 
 ## Requires
 ```
-apteryx glib-2.0 lua cunit pyang xsltproc
+apteryx glib-2.0 libxml2 jansson lua cunit pyang xsltproc
 ```
 
 ## Building

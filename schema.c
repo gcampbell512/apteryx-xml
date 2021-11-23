@@ -28,6 +28,7 @@
 #include <syslog.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
+#include <jansson.h>
 #include <regex.h>
 #include <apteryx.h>
 #include "apteryx-xml.h"
@@ -932,4 +933,135 @@ GNode *
 sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags)
 {
     return _sch_xml_to_gnode (instance, schema, NULL, xml, flags, 0);
+}
+
+static json_t *
+encode_json_type (char *val)
+{
+    json_t *json = NULL;
+    json_int_t i;
+    char *p;
+
+    if (*val != '\0')
+    {
+        i = strtoll (val, &p, 10);
+        if (*p == '\0')
+            json = json_integer (i);
+        if (g_strcmp0 (val, "true") == 0)
+            json = json_true ();
+        if (g_strcmp0 (val, "false") == 0)
+            json = json_false ();
+    }
+    if (!json)
+        json = json_string (val);
+    return json;
+}
+
+static json_t *
+_sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
+                   GNode * node, int flags, int depth)
+{
+    json_t *data = NULL;
+    char *name;
+
+    /* Get the actual node name */
+    if (depth == 0 && strlen (APTERYX_NAME (node)) == 1)
+    {
+        return _sch_gnode_to_json (instance, schema, parent, node->children, flags, depth);
+    }
+    else if (depth == 0 && APTERYX_NAME (node)[0] == '/')
+    {
+        name = APTERYX_NAME (node) + 1;
+    }
+    else
+    {
+        name = APTERYX_NAME (node);
+    }
+
+    /* Find schema node */
+    if (!schema)
+        schema = sch_lookup (instance, name);
+    else
+        schema = sch_node_child (schema, name);
+    if (schema == NULL)
+    {
+        DEBUG ("ERROR: No schema match for gnode %s\n", name);
+        return NULL;
+    }
+    if (!sch_is_readable (schema))
+    {
+        DEBUG ("REST: Ignoring non-readable node %s\n", name);
+        return NULL;
+    }
+
+    if (sch_is_list (schema) && (flags & SCH_F_JSON_ARRAYS))
+    {
+        data = json_array ();
+        apteryx_sort_children (node, g_strcmp0);
+        for (GNode * child = node->children; child; child = child->next)
+        {
+            DEBUG ("%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
+                   APTERYX_NAME (child));
+            json_t *obj = json_object();
+            gnode_sort_children (sch_node_child_first (schema), child);
+            for (GNode * field = child->children; field; field = field->next)
+            {
+                json_t *node = _sch_gnode_to_json (instance, sch_node_child_first (schema), data, field,
+                                   flags, depth + 1);
+                json_object_set_new (obj, APTERYX_NAME (field), node);
+            }
+            json_array_append_new (data, obj);
+        }
+        json_object_set_new (parent, name, data);
+    }
+    else if (!sch_is_leaf (schema))
+    {
+        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+        data = json_object();
+        gnode_sort_children (schema, node);
+        for (GNode * child = node->children; child; child = child->next)
+        {
+            json_t *node = _sch_gnode_to_json (instance, schema, data, child, flags, depth + 1);
+            json_object_set_new (data, APTERYX_NAME (child), node);
+        }
+        if (json_object_iter (data) == NULL)
+        {
+            json_decref (data);
+            data = NULL;
+        }
+        else
+            json_object_set_new (parent, name, data);
+    }
+    else if (APTERYX_HAS_VALUE (node))
+    {
+        char *value = strdup (APTERYX_VALUE (node));
+        if (flags & SCH_F_JSON_TYPES)
+        {
+            value = sch_translate_to (schema, value);
+            data = encode_json_type (value);
+        }
+        else
+            data = json_string (value);
+        DEBUG ("%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), value);
+        json_object_set_new (parent, name, data);
+        free (value);
+    }
+
+    return data;
+}
+
+json_t *
+sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags)
+{
+    json_t * parent = NULL;
+    int depth = 0;
+    if (schema)
+    {
+        schema = ((xmlNode *)schema)->parent;
+        depth = g_node_max_height (node);
+        parent = json_object ();
+        _sch_gnode_to_json (instance, schema, parent, node, flags, depth);
+        return parent;
+    }
+    return _sch_gnode_to_json (instance, schema, parent, node, flags, depth);
 }

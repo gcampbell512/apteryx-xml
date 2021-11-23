@@ -48,13 +48,17 @@ bool sch_validate_pattern (sch_node * node, const char *value);
 typedef enum
 {
     SCH_F_STRIP_KEY = 0x1,
-} cb_lookup_required;
+    SCH_F_JSON_ARRAYS = 0x2,
+    SCH_F_JSON_TYPES = 0x4,
+} sch_flags;
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
-xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node,
-                           int flags);
-GNode *sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml,
-                         int flags);
+xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags);
+GNode *sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags);
+#endif
+#ifdef APTERYX_XML_JSON
+#include <jansson.h>
+json_t *sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags);
 #endif
 
 #endif /* _APTERYX_XML_H_ */

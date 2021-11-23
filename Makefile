@@ -40,8 +40,8 @@ ifneq ($(LUAVERSION),none)
 EXTRA_CFLAGS += -DHAVE_LUA $(shell $(PKG_CONFIG) --cflags $(LUAVERSION))
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION)) -ldl
 endif
-EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0)
-EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0)
+EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0 jansson)
+EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0 jansson)
 
 all: libapteryx-xml.so libapteryx-schema.so apteryx-xml.so
 
