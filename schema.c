@@ -616,6 +616,123 @@ sch_validate_pattern (sch_node * node, const char *value)
 
 /* Data translation/manipulation */
 
+static GNode *
+_sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags, int depth)
+{
+    const char *next;
+    GNode *node = NULL;
+    GNode *rnode = NULL;
+    GNode *child = NULL;
+    char *pred = NULL;
+    char *name;
+
+    if (path && path[0] == '/')
+    {
+        path++;
+
+        /* Find name */
+        next = strchr (path, '/');
+        if (next)
+            name = strndup (path, next - path);
+        else
+            name = strdup (path);
+        if (flags & SCH_F_XPATH)
+        {
+            pred = strchr (name, '[');
+            if (pred)
+            {
+                char *temp = strndup (name, pred - name);
+                pred = strdup (pred);
+                g_free (name);
+                name = temp;
+            }
+        }
+
+        /* Find schema node */
+        if (!schema)
+            schema = sch_lookup (instance, name);
+        else
+            schema = sch_node_child (schema, name);
+        if (schema == NULL)
+        {
+            DEBUG ("ERROR: No schema match for %s\n", name);
+            g_free (name);
+            return NULL;
+        }
+        if (!sch_is_readable (schema))
+        {
+            DEBUG ("Ignoring non-readable node %s\n", name);
+            g_free (name);
+            return NULL;
+        }
+
+        /* Create node */
+        if (depth == 0)
+        {
+            rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s", name));
+            g_free (name);
+        }
+        else
+            rnode = APTERYX_NODE (NULL, name);
+        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
+
+        /* XPATH predicates */
+        if (pred && sch_is_list (schema)) {
+            char key[128 + 1];
+            char value[128 + 1];
+
+            if (sscanf (pred, "[%128[^=]='%128[^']']", key, value) == 2) {
+                // TODO make sure this key is the list key
+                child = APTERYX_NODE (NULL, g_strdup (value));
+                g_node_prepend (rnode, child);
+                depth++;
+                DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
+                if (next) {
+                    APTERYX_NODE (child, g_strdup (key));
+                    depth++;
+                    DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
+                }
+            }
+            g_free (pred);
+            schema = sch_node_child_first (schema);
+        }
+
+        if (next)
+        {
+            node = _sch_path_to_query (instance, schema, next, flags, depth + 1);
+            if (!node)
+            {
+                free ((void *)rnode->data);
+                g_node_destroy (rnode);
+                return NULL;
+            }
+            g_node_prepend (child ? : rnode, node);
+        }
+        else if (sch_node_child_first (schema))
+        {
+            /* Get everything from here down if we do not already have a star */
+            if (child && g_strcmp0 (APTERYX_NAME (child), "*") != 0)
+            {
+                APTERYX_NODE (child, g_strdup ("*"));
+                DEBUG ("%*s%s\n", (depth + 1) * 2, " ", "*");
+            }
+            else if (g_strcmp0 (APTERYX_NAME (rnode), "*") != 0)
+            {
+                APTERYX_NODE (rnode, g_strdup ("*"));
+                DEBUG ("%*s%s\n", (depth + 1) * 2, " ", "*");
+            }
+        }
+    }
+
+    return rnode;
+}
+
+GNode *
+sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags)
+{
+    return _sch_path_to_query (instance, schema, path, flags, 0);
+}
+
 static int
 get_index (GNode * node, sch_node * schema)
 {

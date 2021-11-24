@@ -50,7 +50,9 @@ typedef enum
     SCH_F_STRIP_KEY = 0x1,
     SCH_F_JSON_ARRAYS = 0x2,
     SCH_F_JSON_TYPES = 0x4,
+    SCH_F_XPATH = 0x8,
 } sch_flags;
+GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags);
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
 xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags);
