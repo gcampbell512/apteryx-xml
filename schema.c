@@ -958,8 +958,7 @@ encode_json_type (char *val)
 }
 
 static json_t *
-_sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
-                   GNode * node, int flags, int depth)
+_sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags, int depth)
 {
     json_t *data = NULL;
     char *name;
@@ -967,7 +966,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
     /* Get the actual node name */
     if (depth == 0 && strlen (APTERYX_NAME (node)) == 1)
     {
-        return _sch_gnode_to_json (instance, schema, parent, node->children, flags, depth);
+        return _sch_gnode_to_json (instance, schema, node->children, flags, depth);
     }
     else if (depth == 0 && APTERYX_NAME (node)[0] == '/')
     {
@@ -1006,13 +1005,11 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
             gnode_sort_children (sch_node_child_first (schema), child);
             for (GNode * field = child->children; field; field = field->next)
             {
-                json_t *node = _sch_gnode_to_json (instance, sch_node_child_first (schema), data, field,
-                                   flags, depth + 1);
+                json_t *node = _sch_gnode_to_json (instance, sch_node_child_first (schema), field, flags, depth + 1);
                 json_object_set_new (obj, APTERYX_NAME (field), node);
             }
             json_array_append_new (data, obj);
         }
-        json_object_set_new (parent, name, data);
     }
     else if (!sch_is_leaf (schema))
     {
@@ -1021,7 +1018,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
         gnode_sort_children (schema, node);
         for (GNode * child = node->children; child; child = child->next)
         {
-            json_t *node = _sch_gnode_to_json (instance, schema, data, child, flags, depth + 1);
+            json_t *node = _sch_gnode_to_json (instance, schema, child, flags, depth + 1);
             json_object_set_new (data, APTERYX_NAME (child), node);
         }
         if (json_object_iter (data) == NULL)
@@ -1029,8 +1026,6 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
             json_decref (data);
             data = NULL;
         }
-        else
-            json_object_set_new (parent, name, data);
     }
     else if (APTERYX_HAS_VALUE (node))
     {
@@ -1043,7 +1038,6 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
         else
             data = json_string (value);
         DEBUG ("%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), value);
-        json_object_set_new (parent, name, data);
         free (value);
     }
 
@@ -1053,15 +1047,20 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, json_t * parent,
 json_t *
 sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
-    json_t * parent = NULL;
-    int depth = 0;
+    json_t *json = NULL;
+    json_t *child;
+
     if (schema)
     {
         schema = ((xmlNode *)schema)->parent;
-        depth = g_node_max_height (node);
-        parent = json_object ();
-        _sch_gnode_to_json (instance, schema, parent, node, flags, depth);
-        return parent;
+        child = _sch_gnode_to_json (instance, schema, node, flags, g_node_max_height (node));
+        if (child)
+        {
+            json = json_object ();
+            json_object_set_new (json, APTERYX_NAME (node), child);
+        }
     }
-    return _sch_gnode_to_json (instance, schema, parent, node, flags, depth);
+    else
+        json = _sch_gnode_to_json (instance, schema, node, flags, 0);
+    return json;
 }
