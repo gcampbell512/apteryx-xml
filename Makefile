@@ -32,10 +32,12 @@ else
 EXTRA_CFLAGS += -I$(APTERYX_PATH)
 EXTRA_LDFLAGS += -L$(APTERYX_PATH) -lapteryx
 endif
-LUAVERSION := $(shell $(PKG_CONFIG) --exists lua5.3 && echo lua5.3 ||\
+LUAVERSION := $(shell $(PKG_CONFIG) --exists lua5.4 && echo lua5.4 ||\
+	($(PKG_CONFIG) --exists lua5.3 && echo lua5.3 ||\
 	($(PKG_CONFIG) --exists lua5.2 && echo lua5.2 ||\
 	($(PKG_CONFIG) --exists lua && echo lua ||\
-	echo none)))
+	echo none))))
+
 ifneq ($(LUAVERSION),none)
 EXTRA_CFLAGS += -DHAVE_LUA $(shell $(PKG_CONFIG) --cflags $(LUAVERSION))
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION)) -ldl
@@ -99,6 +101,7 @@ install: all
 	$(Q)ln -s libapteryx-schema.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/libapteryx-schema.so
 	$(Q)install -d $(DESTDIR)/$(PREFIX)/include
 	$(Q)install -D apteryx-xml.h $(DESTDIR)/$(PREFIX)/include/
+	$(Q)install -d $(DESTDIR)/$(PREFIX)/lib/pkgconfig/
 	$(Q)install -D apteryx-xml.pc $(DESTDIR)/$(PREFIX)/lib/pkgconfig/
 
 clean:
