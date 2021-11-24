@@ -61,6 +61,7 @@ GNode *sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * x
 #ifdef APTERYX_XML_JSON
 #include <jansson.h>
 json_t *sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags);
+GNode *sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, int flags);
 #endif
 
 #endif /* _APTERYX_XML_H_ */

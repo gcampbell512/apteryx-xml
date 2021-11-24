@@ -1052,6 +1052,19 @@ sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int
     return _sch_xml_to_gnode (instance, schema, NULL, xml, flags, 0);
 }
 
+static char *
+decode_json_type (json_t *json)
+{
+    char *value;
+    if (json_is_integer (json))
+        value = g_strdup_printf ("%" JSON_INTEGER_FORMAT, json_integer_value (json));
+    else if (json_is_boolean (json))
+        value = g_strdup_printf ("%s", json_is_true (json) ? "true" : "false");
+    else
+        value = g_strdup (json_string_value (json));
+    return value;
+}
+
 static json_t *
 encode_json_type (char *val)
 {
@@ -1180,4 +1193,144 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
     else
         json = _sch_gnode_to_json (instance, schema, node, flags, 0);
     return json;
+}
+
+static GNode *
+_sch_json_to_gnode (sch_instance * instance, sch_node * schema,
+                   json_t * json, const char *name, int flags, int depth)
+{
+    json_t *child;
+    const char *cname;
+    size_t index;
+    GNode *tree = NULL;
+    GNode *node = NULL;
+    char *key = NULL;
+    char *value;
+
+    /* Find schema node */
+    if (!schema)
+        schema = sch_lookup (instance, name);
+    else
+        schema = sch_node_child (schema, name);
+    if (schema == NULL)
+    {
+        DEBUG ("ERROR: No schema match for json node %s\n", name);
+        return NULL;
+    }
+
+    /* LIST */
+    if (sch_is_list (schema) && json_is_array (json))
+    {
+        key = sch_name (sch_node_child_first (sch_node_child_first (schema)));
+        char *kname = NULL;
+        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        depth++;
+        tree = node = APTERYX_NODE (NULL, g_strdup (name));
+        json_array_foreach (json, index, child)
+        {
+            json_t *subchild;
+            const char *subname;
+            json_object_foreach (child, subname, subchild)
+            {
+                if (g_strcmp0 (subname, key) == 0)
+                {
+                    kname = decode_json_type (subchild);
+                    break;
+                }
+            }
+            if (kname)
+                break;
+        }
+        if (!kname)
+        {
+            DEBUG ("ERROR: List \"%s\" missng key \"%s\"\n", name, key);
+            apteryx_free_tree (tree);
+            return NULL;
+        }
+        node = APTERYX_NODE (tree, kname);
+        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+        schema = sch_node_child_first (schema);
+        json_array_foreach (json, index, child)
+        {
+            json_t *subchild;
+            const char *subname;
+            json_object_foreach (child, subname, subchild)
+            {
+                GNode *cn = _sch_json_to_gnode (instance, schema, subchild, subname, flags, depth + 1);
+                if (!cn)
+                {
+                    apteryx_free_tree (tree);
+                    return NULL;
+                }
+                g_node_append (node, cn);
+            }
+        }
+    }
+    /* CONTAINER */
+    else if (!sch_is_leaf (schema))
+    {
+        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        tree = node = APTERYX_NODE (NULL, g_strdup_printf ("%s%s", depth ? "" : "/", name));
+        json_object_foreach (json, cname, child)
+        {
+            GNode *cn = _sch_json_to_gnode (instance, schema, child, cname, flags, depth + 1);
+            if (!cn)
+            {
+                apteryx_free_tree (tree);
+                return NULL;
+            }
+            g_node_append (node, cn);
+        }
+    }
+    /* LEAF */
+    else
+    {
+        if (!sch_is_writable (schema))
+        {
+            DEBUG ("ERROR: Node \"%s\" not writable\n", name);
+            return NULL;
+        }
+
+        tree = node = APTERYX_NODE (NULL, g_strdup (name));
+        value = decode_json_type (json);
+        if (value && value[0] != '\0' && flags & SCH_F_JSON_TYPES)
+        {
+            value = sch_translate_from (schema, value);
+            if (!sch_validate_pattern (schema, value))
+            {
+                DEBUG ("ERROR: Invalid value \"%s\" for node \"%s\"\n", value, name);
+                free (value);
+                apteryx_free_tree (tree);
+                return NULL;
+            }
+        }
+        node = APTERYX_NODE (tree, value);
+        DEBUG ("%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+        return tree;
+    }
+
+    free (key);
+    return tree;
+}
+
+GNode *
+sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, int flags)
+{
+    const char *key;
+    json_t *child;
+    GNode *root;
+    GNode *node;
+
+    root = g_node_new (g_strdup ("/"));
+    json_object_foreach (json, key, child)
+    {
+        node = _sch_json_to_gnode (instance, schema, child, key, flags, 0);
+        if (!node)
+        {
+            apteryx_free_tree (root);
+            return NULL;
+        }
+        g_node_append (root, node);
+    }
+    return root;
 }
