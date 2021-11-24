@@ -33,8 +33,37 @@
 #include <apteryx.h>
 #include "apteryx-xml.h"
 
-#define DEBUG(fmt, args...)
-// #define DEBUG(fmt, args...)  printf (fmt, ## args);
+/* Error handling and debug */
+static __thread sch_err tl_error = 0;
+static __thread char tl_errmsg[BUFSIZ] = {0};
+
+#define DEBUG(flags, fmt, args...) \
+    if (flags & SCH_F_DEBUG) \
+    { \
+        syslog (LOG_DEBUG, fmt, ## args); \
+        printf (fmt, ## args); \
+    }
+
+#define ERROR(flags, error, fmt, args...) \
+    { \
+        tl_error = error; \
+        snprintf (tl_errmsg, BUFSIZ - 1, fmt, ## args); \
+        DEBUG (flags, fmt, ## args); \
+    }
+
+/* Retrieve the last error code */
+sch_err
+sch_last_err (void)
+{
+    return tl_error;
+}
+
+/* Retrieve the last error message */
+const char *
+sch_last_errmsg (void)
+{
+    return tl_errmsg;
+}
 
 /* List full paths for all XML files in the search path */
 static void
@@ -543,7 +572,7 @@ sch_translate_from (sch_node * node, char *value)
 }
 
 bool
-sch_validate_pattern (sch_node * node, const char *value)
+_sch_validate_pattern (sch_node * node, const char *value, int flags)
 {
     xmlNode *xml = (xmlNode *) node;
     char *pattern = (char *) xmlGetProp (node, (xmlChar *) "pattern");
@@ -557,7 +586,7 @@ sch_validate_pattern (sch_node * node, const char *value)
         if (rc != 0)
         {
             regerror (rc, NULL, message, sizeof (message));
-            DEBUG ("SCHEMA: %i (\"%s\") for regex %s", rc, message, pattern);
+            ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex %s", rc, message, pattern);
             xmlFree (pattern);
             return false;
         }
@@ -567,7 +596,7 @@ sch_validate_pattern (sch_node * node, const char *value)
         if (rc == REG_ESPACE)
         {
             regerror (rc, NULL, message, sizeof (message));
-            DEBUG ("SCHEMA: %i (\"%s\") for regex %s", rc, message, pattern);
+            ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex %s", rc, message, pattern);
             xmlFree (pattern);
             return false;
         }
@@ -607,11 +636,18 @@ sch_validate_pattern (sch_node * node, const char *value)
         }
         if (enumeration && !rc)
         {
-            DEBUG ("SCHEMA: \"%s\" not in enumeration\n", value);
+            ERROR (flags, SCH_E_ENUMINVALID, "\"%s\" not in enumeration\n", value);
             return false;
         }
     }
     return true;
+}
+
+bool
+sch_validate_pattern (sch_node * node, const char *value)
+{
+    tl_error = SCH_E_SUCCESS;
+    return _sch_validate_pattern (node, value, 0);
 }
 
 /* Data translation/manipulation */
@@ -655,13 +691,13 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
             schema = sch_node_child (schema, name);
         if (schema == NULL)
         {
-            DEBUG ("ERROR: No schema match for %s\n", name);
+            ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s\n", name);
             g_free (name);
             return NULL;
         }
         if (!sch_is_readable (schema))
         {
-            DEBUG ("Ignoring non-readable node %s\n", name);
+            ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
             g_free (name);
             return NULL;
         }
@@ -674,7 +710,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
         }
         else
             rnode = APTERYX_NODE (NULL, name);
-        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
+        DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
 
         /* XPATH predicates */
         if (pred && sch_is_list (schema)) {
@@ -686,11 +722,11 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
                 child = APTERYX_NODE (NULL, g_strdup (value));
                 g_node_prepend (rnode, child);
                 depth++;
-                DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
+                DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
                 if (next) {
                     APTERYX_NODE (child, g_strdup (key));
                     depth++;
-                    DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
+                    DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
                 }
             }
             g_free (pred);
@@ -714,12 +750,12 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
             if (child && g_strcmp0 (APTERYX_NAME (child), "*") != 0)
             {
                 APTERYX_NODE (child, g_strdup ("*"));
-                DEBUG ("%*s%s\n", (depth + 1) * 2, " ", "*");
+                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
             }
             else if (g_strcmp0 (APTERYX_NAME (rnode), "*") != 0)
             {
                 APTERYX_NODE (rnode, g_strdup ("*"));
-                DEBUG ("%*s%s\n", (depth + 1) * 2, " ", "*");
+                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
             }
         }
     }
@@ -730,6 +766,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
 GNode *
 sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags)
 {
+    tl_error = SCH_E_SUCCESS;
     return _sch_path_to_query (instance, schema, path, flags, 0);
 }
 
@@ -839,7 +876,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNode * parent,
         schema = sch_node_child (schema, name);
     if (schema == NULL)
     {
-        DEBUG ("ERROR: No schema match for gnode %s\n", name);
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for gnode %s\n", name);
         return NULL;
     }
 
@@ -848,7 +885,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNode * parent,
         apteryx_sort_children (node, g_strcmp0);
         for (GNode * child = node->children; child; child = child->next)
         {
-            DEBUG ("%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
+            DEBUG (flags, "%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
                    APTERYX_NAME (child));
             data = xmlNewNode (NULL, BAD_CAST name);
             gnode_sort_children (sch_node_child_first (schema), child);
@@ -862,7 +899,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNode * parent,
     }
     else if (!sch_is_leaf (schema))
     {
-        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+        DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
         if (parent)
             data = xmlNewChild (parent, NULL, BAD_CAST name, NULL);
         else
@@ -875,7 +912,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNode * parent,
     }
     else if (APTERYX_HAS_VALUE (node))
     {
-        DEBUG ("%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), APTERYX_VALUE (node));
+        DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), APTERYX_VALUE (node));
         data = xmlNewNode (NULL, BAD_CAST name);
         xmlNodeSetContent (data, (const xmlChar *) APTERYX_VALUE (node));
         if (parent)
@@ -888,6 +925,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNode * parent,
 xmlNode *
 sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
+    tl_error = SCH_E_SUCCESS;
     if (node && g_node_n_children (node) > 1 && strlen (APTERYX_NAME (node)) == 1)
     {
         xmlNode *first = NULL;
@@ -940,7 +978,7 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
         schema = sch_node_child (schema, name);
     if (schema == NULL)
     {
-        DEBUG ("ERROR: No schema match for xml node %s\n", name);
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for xml node %s\n", name);
         return NULL;
     }
 
@@ -948,18 +986,18 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
     if (sch_is_list (schema))
     {
         key = sch_name (sch_node_child_first (sch_node_child_first (schema)));
-        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         depth++;
         tree = node = APTERYX_NODE (NULL, g_strdup (name));
         attr = (char *) xmlGetProp (xml, BAD_CAST key);
         if (attr)
         {
             node = APTERYX_NODE (node, attr);
-            DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
             if (!(flags && SCH_F_STRIP_KEY) || xmlFirstElementChild (xml))
             {
                 APTERYX_NODE (node, g_strdup (key));
-                DEBUG ("%*s%s\n", (depth + 1) * 2, " ", key);
+                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", key);
             }
         }
         else if (xmlFirstElementChild (xml) &&
@@ -969,19 +1007,19 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
             node =
                 APTERYX_NODE (node,
                               (char *) xmlNodeGetContent (xmlFirstElementChild (xml)));
-            DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
         }
         else
         {
             node = APTERYX_NODE (node, g_strdup ("*"));
-            DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
         }
         schema = sch_node_child_first (schema);
     }
     /* CONTAINER */
     else if (!sch_is_leaf (schema))
     {
-        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         tree = node = APTERYX_NODE (NULL, g_strdup_printf ("%s%s", depth ? "" : "/", name));
     }
     /* LEAF */
@@ -992,16 +1030,16 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
         if (g_strcmp0 (attr, "delete") == 0)
         {
             node = APTERYX_NODE (tree, g_strdup (""));
-            DEBUG ("%*s%s = NULL\n", depth * 2, " ", name);
+            DEBUG (flags, "%*s%s = NULL\n", depth * 2, " ", name);
         }
         else if (xml_node_has_content (xml))
         {
             node = APTERYX_NODE (tree, (char *) xmlNodeGetContent (xml));
-            DEBUG ("%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
         }
         else
         {
-            DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+            DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         }
         free (attr);
     }
@@ -1015,14 +1053,14 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
             if (xmlChildElementCount (xml) == 1 && xml_node_has_content (child))
             {
                 APTERYX_NODE (node, g_strdup ("*"));
-                DEBUG ("%*s%s\n", (depth + 1) * 2, " ", "*");
+                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
                 break;
             }
             /* Multiple children - but the key has a value - GET expects no value */
             else if (xmlChildElementCount (xml) > 1 && xml_node_has_content (child))
             {
                 APTERYX_NODE (node, g_strdup ((const char *) child->name));
-                DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+                DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
             }
         }
         GNode *cn = _sch_xml_to_gnode (instance, schema, NULL, child, flags, depth + 1);
@@ -1039,7 +1077,7 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
         g_strcmp0 (APTERYX_NAME (node), "*") != 0)
     {
         APTERYX_NODE (node, g_strdup ("*"));
-        DEBUG ("%*s%s\n", (depth + 1) * 2, " ", "*");
+        DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
     }
 
     free (key);
@@ -1049,6 +1087,7 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
 GNode *
 sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags)
 {
+    tl_error = SCH_E_SUCCESS;
     return _sch_xml_to_gnode (instance, schema, NULL, xml, flags, 0);
 }
 
@@ -1114,12 +1153,12 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, in
         schema = sch_node_child (schema, name);
     if (schema == NULL)
     {
-        DEBUG ("ERROR: No schema match for gnode %s\n", name);
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for gnode %s\n", name);
         return NULL;
     }
     if (!sch_is_readable (schema))
     {
-        DEBUG ("REST: Ignoring non-readable node %s\n", name);
+        ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
         return NULL;
     }
 
@@ -1129,7 +1168,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, in
         apteryx_sort_children (node, g_strcmp0);
         for (GNode * child = node->children; child; child = child->next)
         {
-            DEBUG ("%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
+            DEBUG (flags, "%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
                    APTERYX_NAME (child));
             json_t *obj = json_object();
             gnode_sort_children (sch_node_child_first (schema), child);
@@ -1143,7 +1182,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, in
     }
     else if (!sch_is_leaf (schema))
     {
-        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+        DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
         data = json_object();
         gnode_sort_children (schema, node);
         for (GNode * child = node->children; child; child = child->next)
@@ -1167,7 +1206,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, in
         }
         else
             data = json_string (value);
-        DEBUG ("%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), value);
+        DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), value);
         free (value);
     }
 
@@ -1180,6 +1219,7 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
     json_t *json = NULL;
     json_t *child;
 
+    tl_error = SCH_E_SUCCESS;
     if (schema)
     {
         schema = ((xmlNode *)schema)->parent;
@@ -1214,7 +1254,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
         schema = sch_node_child (schema, name);
     if (schema == NULL)
     {
-        DEBUG ("ERROR: No schema match for json node %s\n", name);
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for json node %s\n", name);
         return NULL;
     }
 
@@ -1223,7 +1263,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
     {
         key = sch_name (sch_node_child_first (sch_node_child_first (schema)));
         char *kname = NULL;
-        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         depth++;
         tree = node = APTERYX_NODE (NULL, g_strdup (name));
         json_array_foreach (json, index, child)
@@ -1243,12 +1283,12 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
         }
         if (!kname)
         {
-            DEBUG ("ERROR: List \"%s\" missng key \"%s\"\n", name, key);
+            ERROR (flags, SCH_E_KEYMISSING, "List \"%s\" missng key \"%s\"\n", name, key);
             apteryx_free_tree (tree);
             return NULL;
         }
         node = APTERYX_NODE (tree, kname);
-        DEBUG ("%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+        DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
         schema = sch_node_child_first (schema);
         json_array_foreach (json, index, child)
         {
@@ -1269,7 +1309,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
     /* CONTAINER */
     else if (!sch_is_leaf (schema))
     {
-        DEBUG ("%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         tree = node = APTERYX_NODE (NULL, g_strdup_printf ("%s%s", depth ? "" : "/", name));
         json_object_foreach (json, cname, child)
         {
@@ -1287,7 +1327,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
     {
         if (!sch_is_writable (schema))
         {
-            DEBUG ("ERROR: Node \"%s\" not writable\n", name);
+            ERROR (flags, SCH_E_NOTWRITABLE, "Node \"%s\" not writable\n", name);
             return NULL;
         }
 
@@ -1296,21 +1336,34 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
         if (value && value[0] != '\0' && flags & SCH_F_JSON_TYPES)
         {
             value = sch_translate_from (schema, value);
-            if (!sch_validate_pattern (schema, value))
+            if (!_sch_validate_pattern (schema, value, flags))
             {
-                DEBUG ("ERROR: Invalid value \"%s\" for node \"%s\"\n", value, name);
+                DEBUG (flags, "Invalid value \"%s\" for node \"%s\"\n", value, name);
                 free (value);
                 apteryx_free_tree (tree);
                 return NULL;
             }
         }
         node = APTERYX_NODE (tree, value);
-        DEBUG ("%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+        DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
         return tree;
     }
 
     free (key);
     return tree;
+}
+
+static int
+sch_node_height (sch_node * schema)
+{
+    xmlNode *xml = (xmlNode *) schema;
+    int depth = 0;
+    while (xml->parent)
+    {
+        xml = xml->parent;
+        depth++;
+    }
+    return depth ? depth - 1 : 0;
 }
 
 GNode *
@@ -1320,11 +1373,15 @@ sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, in
     json_t *child;
     GNode *root;
     GNode *node;
+    int depth = 0;
 
+    tl_error = SCH_E_SUCCESS;
     root = g_node_new (g_strdup ("/"));
     json_object_foreach (json, key, child)
     {
-        node = _sch_json_to_gnode (instance, schema, child, key, flags, 0);
+        if (schema)
+            depth = sch_node_height (schema);
+        node = _sch_json_to_gnode (instance, schema, child, key, flags, depth);
         if (!node)
         {
             apteryx_free_tree (root);

@@ -19,6 +19,20 @@
 #ifndef _APTERYX_XML_H_
 #define _APTERYX_XML_H_
 
+/* Thread local error handling */
+typedef enum
+{
+    SCH_E_SUCCESS,
+    SCH_E_PATREGEX,
+    SCH_E_ENUMINVALID,
+    SCH_E_NOSCHEMANODE,
+    SCH_E_NOTREADABLE,
+    SCH_E_NOTWRITABLE,
+    SCH_E_KEYMISSING,
+} sch_err;
+sch_err sch_last_err (void);
+const char * sch_last_errmsg (void);
+
 /* Schema */
 typedef void sch_instance;
 typedef void sch_node;
@@ -47,10 +61,11 @@ bool sch_validate_pattern (sch_node * node, const char *value);
 /* Data translation/manipulation */
 typedef enum
 {
-    SCH_F_STRIP_KEY = 0x1,
-    SCH_F_JSON_ARRAYS = 0x2,
-    SCH_F_JSON_TYPES = 0x4,
-    SCH_F_XPATH = 0x8,
+    SCH_F_DEBUG = 0x1,
+    SCH_F_STRIP_KEY = 0x2,
+    SCH_F_JSON_ARRAYS = 0x4,
+    SCH_F_JSON_TYPES = 0x8,
+    SCH_F_XPATH = 0x10,
 } sch_flags;
 GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags);
 #ifdef APTERYX_XML_LIBXML2
