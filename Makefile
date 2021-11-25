@@ -32,10 +32,10 @@ else
 EXTRA_CFLAGS += -I$(APTERYX_PATH)
 EXTRA_LDFLAGS += -L$(APTERYX_PATH) -lapteryx
 endif
-LUAVERSION := $(shell $(PKG_CONFIG) --exists lua5.4 && echo lua5.4 ||\
+LUAVERSION := $(shell $(PKG_CONFIG) --exists lua && echo lua ||\
+	($(PKG_CONFIG) --exists lua5.4 && echo lua5.4 ||\
 	($(PKG_CONFIG) --exists lua5.3 && echo lua5.3 ||\
 	($(PKG_CONFIG) --exists lua5.2 && echo lua5.2 ||\
-	($(PKG_CONFIG) --exists lua && echo lua ||\
 	echo none))))
 
 ifneq ($(LUAVERSION),none)
