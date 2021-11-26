@@ -29,6 +29,7 @@ typedef enum
     SCH_E_NOTREADABLE,
     SCH_E_NOTWRITABLE,
     SCH_E_KEYMISSING,
+    SCH_E_INVALIDQUERY,
 } sch_err;
 sch_err sch_last_err (void);
 const char * sch_last_errmsg (void);

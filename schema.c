@@ -652,13 +652,113 @@ sch_validate_pattern (sch_node * node, const char *value)
 
 /* Data translation/manipulation */
 
+static bool parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *parent, int flags, int depth);
+static GNode *
+parse_field (sch_instance * instance, sch_node * schema, const char *path, int flags, int depth)
+{
+    GNode *rnode = NULL;
+    GNode *child = NULL;
+    const char *next = NULL;
+    const char *sublist = NULL;
+    char *name;
+
+    /* Find name */
+    sublist = strchr (path, '(');
+    next = strchr (path, '/');
+    if (sublist && (!next || sublist < next))
+        name = strndup (path, sublist - path);
+    else if (next)
+        name = strndup (path, next - path);
+    else
+        name = strdup (path);
+
+    /* Find schema node */
+    if (!schema)
+        schema = sch_lookup (instance, name);
+    else
+        schema = sch_node_child (schema, name);
+    if (schema == NULL)
+    {
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s\n", name);
+        g_free (name);
+        return NULL;
+    }
+    if (!sch_is_readable (schema))
+    {
+        ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
+        g_free (name);
+        return NULL;
+    }
+
+    /* Create the node */
+    rnode = APTERYX_NODE (NULL, name);
+    DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
+
+    /* Process subpath */
+    if (next)
+    {
+        child = parse_field (instance, schema, next + 1, flags, depth + 1);
+        if (!child)
+        {
+            free ((void *)rnode->data);
+            g_node_destroy (rnode);
+            return NULL;
+        }
+        g_node_prepend (rnode, child);
+    }
+    else if (sublist)
+    {
+        char *fields = g_strndup (sublist + 1, strlen (sublist) - 2);
+        if (!parse_fields (instance, schema, fields, rnode, flags, depth + 1))
+        {
+            free ((void *)rnode->data);
+            g_node_destroy (rnode);
+            free (fields);
+            return false;
+        }
+        free (fields);
+    }
+
+    return rnode;
+}
+
+static bool
+parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *parent, int flags, int depth)
+{
+    char *h, *t;
+    bool skip = false;
+
+    h = t = fields;
+    while (*h)
+    {
+        if (*(h + 1) == '(')
+            skip = true;
+        else if (*(h + 1) == '\0' || (!skip && *(h + 1) == ';'))
+        {
+            char *field = strndup (t, (h - t + 1));
+            GNode *node = parse_field (instance, schema, field, flags, depth);
+            free (field);
+            if (!node)
+                return false;
+            g_node_prepend (parent, node);
+            t = h + 2;
+        }
+        else if (*(h + 1) == ')')
+            skip = false;
+
+        h++;
+    }
+    return true;
+}
+
 static GNode *
 _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags, int depth)
 {
-    const char *next;
+    const char *next = NULL;
     GNode *node = NULL;
     GNode *rnode = NULL;
     GNode *child = NULL;
+    char *query = NULL;
     char *pred = NULL;
     char *name;
 
@@ -667,11 +767,16 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
         path++;
 
         /* Find name */
+        query = strchr (path, '?');
         next = strchr (path, '/');
-        if (next)
+        if (query && (!next || query < next))
+            name = strndup (path, query - path);
+        else if (next)
             name = strndup (path, next - path);
         else
             name = strdup (path);
+        if (query && next && query < next)
+            next = NULL;
         if (flags & SCH_F_XPATH)
         {
             pred = strchr (name, '[');
@@ -743,6 +848,36 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
                 return NULL;
             }
             g_node_prepend (child ? : rnode, node);
+        }
+        else if (query)
+        {
+            char *ptr = NULL;
+            char *parameter;
+
+            /* Split query after '?' by '&' */
+            query = g_strdup (query + 1);
+            parameter = strtok_r (query, "&", &ptr);
+            while (parameter)
+            {
+                if (strncmp (parameter, "fields=", strlen ("fields=")) == 0)
+                {
+                    if (!parse_fields (instance, schema, parameter + strlen ("fields="), rnode, flags, depth + 1))
+                    {
+                        apteryx_free_tree (rnode);
+                        free (query);
+                        return NULL;
+                    }
+                }
+                else
+                {
+                    ERROR (flags, SCH_E_INVALIDQUERY, "Do not support query \"%s\"\n", parameter);
+                    apteryx_free_tree (rnode);
+                    free (query);
+                    return NULL;
+                }
+                parameter = strtok_r (NULL, "&", &ptr);
+            }
+            free (query);
         }
         else if (sch_node_child_first (schema))
         {
