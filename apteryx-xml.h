@@ -40,7 +40,6 @@ typedef void sch_node;
 sch_instance *sch_load (const char *path);
 void sch_free (sch_instance * schema);
 sch_node *sch_lookup (sch_instance * schema, const char *path);
-sch_node *sch_ns_lookup (sch_instance * schema, const char *namespace, const char *path);
 char *sch_dump_xml (sch_instance * schema);
 
 sch_node *sch_node_child (sch_node * parent, const char *name);

@@ -103,6 +103,49 @@ list_xml_files (GList ** files, const char *path)
     return;
 }
 
+static bool
+sch_ns_node_equal (xmlNode * a, xmlNode * b)
+{
+    char *a_name = NULL;
+    char *b_name = NULL;
+    xmlNsPtr *a_ns = NULL;
+    xmlNsPtr *b_ns = NULL;
+    xmlNsPtr *cur;
+    bool ret = FALSE;
+
+    /* Must have matching names */
+    a_name = (char *) xmlGetProp (a, (xmlChar *) "name");
+    b_name = (char *) xmlGetProp (b, (xmlChar *) "name");
+    if (g_strcmp0 (a_name, b_name) != 0)
+    {
+        goto exit;
+    }
+
+    /* Must have at least one namespace (href) in common */
+    a_ns = xmlGetNsList (a->doc, a);
+    b_ns = xmlGetNsList (b->doc, b);
+    cur = a_ns;
+    while (*cur)
+    {
+        if (g_strcmp0 ((const char *) (*cur)->prefix, "xsi") != 0 &&
+            xmlSearchNsByHref (b->doc, b, (*cur)->href))
+        {
+            ret = TRUE;
+            goto exit;
+        }
+        cur++;
+    }
+
+exit:
+    if (a_ns)
+        xmlFree (a_ns);
+    if (b_ns)
+        xmlFree (b_ns);
+    free (a_name);
+    free (b_name);
+    return ret;
+}
+
 /* Merge nodes from a new tree to the original tree */
 static void
 merge_nodes (xmlNode * orig, xmlNode * new, int depth)
@@ -112,37 +155,38 @@ merge_nodes (xmlNode * orig, xmlNode * new, int depth)
 
     for (n = new; n; n = n->next)
     {
-        char *orig_name = NULL;
-        char *new_name;
-        if (n->type != XML_ELEMENT_NODE)
+        /* Check if this node is already in the existing tree */
+        for (o = orig; o; o = o->next)
         {
-            continue;
-        }
-        new_name = (char *) xmlGetProp (n, (xmlChar *) "name");
-        if (new_name)
-        {
-            for (o = orig; o; o = o->next)
+            if (sch_ns_node_equal (n, o))
             {
-                orig_name = (char *) xmlGetProp (o, (xmlChar *) "name");
-                if (orig_name)
+                break;
+            }
+        }
+        if (o)
+        {
+            /* Already exists - merge in the children */
+            merge_nodes (o->children, n->children, depth + 1);
+        }
+        else
+        {
+            /* New node */
+            o = xmlCopyNode (n, 1);
+
+            /* Need to add top-level namespaces to the root of this branch */
+            if (!n->nsDef && n->parent && n->parent->nsDef)
+            {
+                xmlNs *ns = n->parent->nsDef;
+                while (ns)
                 {
-                    if (strcmp (new_name, orig_name) == 0)
-                    {
-                        xmlFree (orig_name);
-                        break;
-                    }
-                    xmlFree (orig_name);
+                    if (ns->prefix && g_strcmp0 ((char *) ns->prefix, "xsi") != 0)
+                        xmlNewNs (o, ns->href, ns->prefix);
+                    ns = ns->next;
                 }
             }
-            xmlFree (new_name);
-            if (o)
-            {
-                merge_nodes (o->children, n->children, depth + 1);
-            }
-            else
-            {
-                xmlAddPrevSibling (orig, xmlCopyNode (n, 1));
-            }
+
+            /* Add as a sibling to the existing tree node */
+            xmlAddSibling (orig, o);
         }
     }
     return;
@@ -161,7 +205,6 @@ cleanup_nodes (xmlNode * node)
         if (n->type == XML_ELEMENT_NODE)
         {
             cleanup_nodes (n->children);
-            xmlSetNs (n, NULL);
         }
         else
         {
@@ -180,6 +223,12 @@ sch_load (const char *path)
     GList *files = NULL;
     GList *iter;
 
+    /* Create a new doc and root node */
+    doc = xmlNewDoc ((xmlChar *) "1.0");
+    xmlDocSetRootElement (doc, xmlNewNode (NULL, (xmlChar *) "MODULE"));
+    xmlNewNs (xmlDocGetRootElement (doc), (const xmlChar *) "http://www.w3.org/2001/XMLSchema-instance", (const xmlChar *) "xsi");
+    xmlNewProp (xmlDocGetRootElement (doc), (const xmlChar *) "xsi:schemaLocation",
+        (const xmlChar *) "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd");
     list_xml_files (&files, path);
     for (iter = files; iter; iter = g_list_next (iter))
     {
@@ -187,13 +236,15 @@ sch_load (const char *path)
         xmlDoc *new = xmlParseFile (filename);
         if (new == NULL)
         {
-            syslog (LOG_ERR, "LUA: failed to parse \"%s\"", filename);
+            syslog (LOG_ERR, "XML: failed to parse \"%s\"", filename);
             continue;
         }
         cleanup_nodes (xmlDocGetRootElement (new)->children);
-        if (doc == NULL)
+        if (xmlDocGetRootElement (doc)->children == NULL)
         {
-            doc = new;
+            xmlNode *node = xmlCopyNode (xmlDocGetRootElement (new)->children, 1);
+            xmlDocGetRootElement (doc)->children = node;
+            xmlFreeDoc (new);
         }
         else
         {
@@ -246,13 +297,18 @@ sch_dump_xml (sch_instance * schema)
     return (char *) xmlbuf;
 }
 
+bool
+sch_ns_match (xmlNode *node, const char *namespace)
+{
+    return xmlSearchNs (node->doc, node, (const xmlChar *)namespace) != NULL;
+}
+
 static xmlNode *
-lookup_node (xmlNode * node, const char *path, char **namespace)
+lookup_node (char *namespace, xmlNode * node, const char *path)
 {
     xmlNode *n;
     char *name, *mode;
     char *key = NULL;
-    char *ns = NULL;
     char *lk = NULL;
     int len;
 
@@ -277,18 +333,6 @@ lookup_node (xmlNode * node, const char *path, char **namespace)
         key = strdup (path);
         path = NULL;
     }
-    if (namespace)
-    {
-        ns = strchr (key, ':');
-        if (ns)
-        {
-            len = ns - key;
-            free (*namespace);
-            *namespace = key;
-            (*namespace)[len] = '\0';
-            key = strndup (key + len + 1, strlen (key) - len - 1);
-        }
-    }
     for (n = node->children; n; n = n->next)
     {
         if (n->type != XML_ELEMENT_NODE)
@@ -302,7 +346,7 @@ lookup_node (xmlNode * node, const char *path, char **namespace)
             if (lk)
                 key[lk - key] = '\0';
         }
-        if (name && (name[0] == '*' || match_name (name, key)))
+        if (name && (name[0] == '*' || match_name (name, key)) && sch_ns_match (n, namespace))
         {
             free (key);
             if (path)
@@ -313,14 +357,14 @@ lookup_node (xmlNode * node, const char *path, char **namespace)
                     xmlFree (name);
                     xmlFree (mode);
                     /* restart search from root */
-                    return lookup_node (xmlDocGetRootElement (node->doc), path, namespace);
+                    return lookup_node (namespace, xmlDocGetRootElement (node->doc), path);
                 }
                 xmlFree (name);
                 if (mode)
                 {
                     xmlFree (mode);
                 }
-                return lookup_node (n, path, namespace);
+                return lookup_node (namespace, n, path);
             }
             xmlFree (name);
             return n;
@@ -339,20 +383,11 @@ lookup_node (xmlNode * node, const char *path, char **namespace)
 sch_node *
 sch_lookup (sch_instance * schema, const char *path)
 {
-    return lookup_node ((xmlNode *) schema, path, NULL);
+    return lookup_node (NULL, (xmlNode *) schema, path);
 }
 
-sch_node *
-sch_ns_lookup (sch_instance * schema, const char *namespace, const char *path)
-{
-    char *ns = namespace ? strdup (namespace) : NULL;
-    sch_node *node = lookup_node ((xmlNode *) schema, path, &ns);
-    free (ns);
-    return node;
-}
-
-sch_node *
-sch_node_child (sch_node * parent, const char *child)
+static sch_node *
+_sch_node_child (const char *namespace, sch_node * parent, const char *child)
 {
     xmlNode *xml = (xmlNode *) parent;
     xmlNode *n = xml->children;
@@ -362,7 +397,7 @@ sch_node_child (sch_node * parent, const char *child)
         if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
         {
             char *name = (char *) xmlGetProp (n, (xmlChar *) "name");
-            if (name && (name[0] == '*' || match_name (name, child)))
+            if (name && (name[0] == '*' || match_name (name, child)) && sch_ns_match (n, namespace))
             {
                 xmlFree (name);
                 break;
@@ -372,6 +407,12 @@ sch_node_child (sch_node * parent, const char *child)
         n = n->next;
     }
     return n;
+}
+
+sch_node *
+sch_node_child (sch_node * parent, const char *child)
+{
+    return _sch_node_child (NULL, parent, child);
 }
 
 sch_node *
@@ -752,7 +793,7 @@ parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *p
 }
 
 static GNode *
-_sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags, int depth)
+_sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace, const char *path, int flags, int depth)
 {
     const char *next = NULL;
     GNode *node = NULL;
@@ -760,7 +801,9 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
     GNode *child = NULL;
     char *query = NULL;
     char *pred = NULL;
-    char *name;
+    char *ns = NULL;
+    char *name = NULL;
+    int len;
 
     if (path && path[0] == '/')
     {
@@ -784,27 +827,36 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
             {
                 char *temp = strndup (name, pred - name);
                 pred = strdup (pred);
-                g_free (name);
+                free (name);
                 name = temp;
             }
         }
 
+        /* Detect change in namespace */
+        ns = strchr (name, ':');
+        if (ns)
+        {
+            len = ns - name;
+            ns = name;
+            ns[len] = '\0';
+            name = strndup (name + len + 1, strlen (name) - len - 1);
+            DEBUG (flags, "[%s -> %s]\n", namespace ?: "", ns);
+        }
+
         /* Find schema node */
         if (!schema)
-            schema = sch_lookup (instance, name);
+            schema = lookup_node (ns ?: namespace, instance, name);
         else
-            schema = sch_node_child (schema, name);
+            schema = _sch_node_child (ns ?: namespace, schema, name);
         if (schema == NULL)
         {
-            ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s\n", name);
-            g_free (name);
-            return NULL;
+            ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s:%s\n", ns ?: namespace, name);
+            goto exit;
         }
         if (!sch_is_readable (schema))
         {
             ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
-            g_free (name);
-            return NULL;
+            goto exit;
         }
 
         /* Create node */
@@ -814,7 +866,10 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
             g_free (name);
         }
         else
+        {
             rnode = APTERYX_NODE (NULL, name);
+            name = NULL;
+        }
         DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
 
         /* XPATH predicates */
@@ -840,12 +895,13 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
 
         if (next)
         {
-            node = _sch_path_to_query (instance, schema, next, flags, depth + 1);
+            node = _sch_path_to_query (instance, schema, ns ?: namespace, next, flags, depth + 1);
             if (!node)
             {
                 free ((void *)rnode->data);
                 g_node_destroy (rnode);
-                return NULL;
+                rnode = NULL;
+                goto exit;
             }
             g_node_prepend (child ? : rnode, node);
         }
@@ -864,16 +920,18 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
                     if (!parse_fields (instance, schema, parameter + strlen ("fields="), rnode, flags, depth + 1))
                     {
                         apteryx_free_tree (rnode);
+                        rnode = NULL;
                         free (query);
-                        return NULL;
+                        goto exit;
                     }
                 }
                 else
                 {
                     ERROR (flags, SCH_E_INVALIDQUERY, "Do not support query \"%s\"\n", parameter);
                     apteryx_free_tree (rnode);
+                    rnode = NULL;
                     free (query);
-                    return NULL;
+                    goto exit;
                 }
                 parameter = strtok_r (NULL, "&", &ptr);
             }
@@ -895,6 +953,9 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path
         }
     }
 
+exit:
+    free (name);
+    free (ns);
     return rnode;
 }
 
@@ -902,7 +963,7 @@ GNode *
 sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags)
 {
     tl_error = SCH_E_SUCCESS;
-    return _sch_path_to_query (instance, schema, path, flags, 0);
+    return _sch_path_to_query (instance, schema, NULL, path, flags, 0);
 }
 
 static int
