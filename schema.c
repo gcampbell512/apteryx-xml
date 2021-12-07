@@ -416,10 +416,10 @@ sch_node_child (sch_node * parent, const char *child)
 }
 
 sch_node *
-sch_node_child_next (sch_node * parent, sch_node * node)
+sch_node_child_first (sch_node *parent)
 {
     xmlNode *xml = (xmlNode *) parent;
-    xmlNode *n = node ? ((xmlNode *) node)->next : xml->children;
+    xmlNode *n = xml->children;
 
     while (n)
     {
@@ -431,9 +431,17 @@ sch_node_child_next (sch_node * parent, sch_node * node)
 }
 
 sch_node *
-sch_node_child_first (sch_node * parent)
+sch_node_next_sibling (sch_node *node)
 {
-    return sch_node_child_next (parent, NULL);
+    xmlNode *n = ((xmlNode *) node)->next;
+
+    while (n)
+    {
+        if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
+            break;
+        n = n->next;
+    }
+    return n;
 }
 
 char *
