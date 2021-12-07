@@ -978,7 +978,7 @@ get_index (GNode * node, sch_node * schema)
 {
     int index = 0;
     sch_node *n;
-    for (n = sch_node_child_first (schema); n; index++, n = sch_node_child_next (schema, n))
+    for (n = sch_node_child_first (schema); n; index++, n = sch_node_next_sibling (n))
     {
         char *name = sch_name (n);
         if (g_strcmp0 (name, (char *) node->data) == 0)
