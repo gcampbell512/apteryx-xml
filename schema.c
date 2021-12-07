@@ -863,7 +863,6 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
         if (depth == 0)
         {
             rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s", name));
-            g_free (name);
         }
         else
         {
