@@ -27,7 +27,13 @@
 				<xs:element ref="INDEX" minOccurs="0" maxOccurs="1" />
 				<xs:element ref="REFRESH" minOccurs="0" maxOccurs="1" />
 			</xs:sequence>
-			<xs:attribute name="name" type="xs:string" use="required" />
+			<xs:attribute name="name" use="required">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:pattern value="[^_\s]*"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
 			<xs:attribute name="default" type="xs:string" use="optional" />
 			<xs:attribute name="pattern" type="xs:string" use="optional" />
 			<xs:attribute name="help" type="xs:string" use="optional" />
