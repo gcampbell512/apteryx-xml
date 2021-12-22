@@ -47,6 +47,9 @@ sch_node *sch_node_child_first (sch_node * parent);
 sch_node *sch_node_next_sibling (sch_node * node);
 
 char *sch_name (sch_node * node);
+char *sch_model (sch_node * node);
+char *sch_organization (sch_node * node);
+char *sch_version (sch_node * node);
 char *sch_path (sch_node * node);
 bool sch_is_leaf (sch_node * node);
 bool sch_is_list (sch_node * node);

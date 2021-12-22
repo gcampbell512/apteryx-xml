@@ -54,6 +54,9 @@
 				<xs:element ref="SCRIPT" minOccurs="0" maxOccurs="unbounded"/>
 				<xs:element ref="NODE" minOccurs="0" maxOccurs="unbounded"/>
 			</xs:sequence>
+			<xs:attribute name="model" type="xs:string" use="optional" />
+			<xs:attribute name="organization" type="xs:string" use="optional" />
+			<xs:attribute name="version" type="xs:string" use="optional" />
 		</xs:complexType>
 	</xs:element>
 </xs:schema>

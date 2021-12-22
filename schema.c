@@ -215,6 +215,27 @@ cleanup_nodes (xmlNode * node)
     }
 }
 
+/* Add module organisation and revision to its child node */
+void
+add_module_info_to_child(xmlNode * node)
+{
+    xmlChar *mod = xmlGetProp(node, (xmlChar *)"model");
+    xmlChar *org = xmlGetProp(node, (xmlChar *)"organization");
+    xmlChar *ver = xmlGetProp (node, (xmlChar *) "version");
+    if (mod) {
+        xmlNewProp(node->children, (const xmlChar *)"model", mod);
+        xmlFree(mod);
+    }
+    if(org) {
+        xmlNewProp (node->children, (const xmlChar *) "organization", org);
+        xmlFree(org);
+    }
+    if(ver) {
+        xmlNewProp (node->children, (const xmlChar *) "version", ver);
+        xmlFree(ver);
+    }
+}
+
 /* Parse all XML files in the search path and merge trees */
 sch_instance *
 sch_load (const char *path)
@@ -240,6 +261,7 @@ sch_load (const char *path)
             continue;
         }
         cleanup_nodes (xmlDocGetRootElement (new)->children);
+        add_module_info_to_child(xmlDocGetRootElement(new));
         if (xmlDocGetRootElement (doc)->children == NULL)
         {
             xmlNode *node = xmlCopyNode (xmlDocGetRootElement (new)->children, 1);
@@ -448,6 +470,48 @@ char *
 sch_name (sch_node * node)
 {
     return (char *) xmlGetProp (node, (xmlChar *) "name");
+}
+
+char *
+sch_model (sch_node * node)
+{
+    char *model;
+    while (node) {
+        model = (char *) xmlGetProp (node, (xmlChar *) "model");
+        if (model) {
+            break;
+        }
+        node = ((xmlNode *) node)->parent;
+    }
+    return model;
+}
+
+char *
+sch_organization (sch_node * node)
+{
+    char *organization;
+    while (node) {
+        organization = (char *) xmlGetProp (node, (xmlChar *) "organization");
+        if (organization) {
+            break;
+        }
+        node = ((xmlNode *) node)->parent;
+    }
+    return organization;
+}
+
+char *
+sch_version (sch_node * node)
+{
+    char *version;
+    while (node) {
+        version = (char *) xmlGetProp (node, (xmlChar *) "version");
+        if (version) {
+            break;
+        }
+        node = ((xmlNode *) node)->parent;
+    }
+    return version;
 }
 
 char *
