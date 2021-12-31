@@ -45,9 +45,10 @@ char *sch_dump_xml (sch_instance * schema);
 sch_node *sch_node_child (sch_node *parent, const char *name);
 sch_node *sch_node_child_first (sch_node * parent);
 sch_node *sch_node_next_sibling (sch_node * node);
+sch_node *sch_preorder_next (sch_node *current, sch_node *root);
 
 char *sch_name (sch_node * node);
-char *sch_model (sch_node * node);
+char *sch_model (sch_node * node, bool ignore_ancestors);
 char *sch_organization (sch_node * node);
 char *sch_version (sch_node * node);
 char *sch_path (sch_node * node);

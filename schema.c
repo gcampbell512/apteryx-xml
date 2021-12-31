@@ -146,6 +146,27 @@ exit:
     return ret;
 }
 
+/* Add model name, organisation and revision to the given node. This data is fetched from ancestor nodes */
+void
+add_module_info_to_node(xmlNode * node)
+{
+    xmlChar *mod = (xmlChar *) sch_model ((sch_node *) node, false);
+    xmlChar *org = (xmlChar *) sch_organization ((sch_node *) node);
+    xmlChar *ver = (xmlChar *) sch_version ((sch_node *) node);
+    if (mod) {
+        xmlNewProp(node, (const xmlChar *)"model", mod);
+        xmlFree(mod);
+    }
+    if(org) {
+        xmlNewProp (node, (const xmlChar *) "organization", org);
+        xmlFree(org);
+    }
+    if(ver) {
+        xmlNewProp (node, (const xmlChar *) "version", ver);
+        xmlFree(ver);
+    }
+}
+
 /* Merge nodes from a new tree to the original tree */
 static void
 merge_nodes (xmlNode * orig, xmlNode * new, int depth)
@@ -170,6 +191,9 @@ merge_nodes (xmlNode * orig, xmlNode * new, int depth)
         }
         else
         {
+            /* Need to add model data to the root of this branch */
+            add_module_info_to_node(n);
+
             /* New node */
             o = xmlCopyNode (n, 1);
 
@@ -215,27 +239,6 @@ cleanup_nodes (xmlNode * node)
     }
 }
 
-/* Add module organisation and revision to its child node */
-void
-add_module_info_to_child(xmlNode * node)
-{
-    xmlChar *mod = xmlGetProp(node, (xmlChar *)"model");
-    xmlChar *org = xmlGetProp(node, (xmlChar *)"organization");
-    xmlChar *ver = xmlGetProp (node, (xmlChar *) "version");
-    if (mod) {
-        xmlNewProp(node->children, (const xmlChar *)"model", mod);
-        xmlFree(mod);
-    }
-    if(org) {
-        xmlNewProp (node->children, (const xmlChar *) "organization", org);
-        xmlFree(org);
-    }
-    if(ver) {
-        xmlNewProp (node->children, (const xmlChar *) "version", ver);
-        xmlFree(ver);
-    }
-}
-
 /* Parse all XML files in the search path and merge trees */
 sch_instance *
 sch_load (const char *path)
@@ -261,15 +264,16 @@ sch_load (const char *path)
             continue;
         }
         cleanup_nodes (xmlDocGetRootElement (new)->children);
-        add_module_info_to_child(xmlDocGetRootElement(new));
         if (xmlDocGetRootElement (doc)->children == NULL)
         {
             xmlNode *node = xmlCopyNode (xmlDocGetRootElement (new)->children, 1);
+            add_module_info_to_node (node);
             xmlDocGetRootElement (doc)->children = node;
             xmlFreeDoc (new);
         }
         else
         {
+            add_module_info_to_node (xmlDocGetRootElement (new)->children);
             merge_nodes (xmlDocGetRootElement (doc)->children,
                          xmlDocGetRootElement (new)->children, 0);
             xmlFreeDoc (new);
@@ -466,19 +470,60 @@ sch_node_next_sibling (sch_node *node)
     return n;
 }
 
+/*
+ * Returns the next node in a preorder traversal of the schema tree, or NULL if this would be the last in the traversal.
+ * Only traverses nodes from root downwards. If root is null, will traverse all of tree
+ */
+sch_node *
+sch_preorder_next(sch_node *current, sch_node *root) {
+    /* Handle null */
+    if (!current) {
+        return NULL;
+    }
+
+    /* Check if this node has children */
+    sch_node *next = sch_node_child_first(current);
+    if (next) {
+        return next;
+    }
+
+    /* Check if this node has siblings */
+    next = sch_node_next_sibling(current);
+    if (next) {
+        return next;
+    }
+
+    /* Go up the tree, looking for siblings of ancestors */
+    next = ((xmlNode *) current)->parent;
+    while(next) {
+        if (root && next == root) {
+            break;
+        }
+        if (sch_node_next_sibling(next)) {
+            next = sch_node_next_sibling(next);
+            break;
+        }
+        next = ((xmlNode *) next)->parent;
+    }
+
+    /* At this stage either we have a next node or we have finished the tree */
+    return next == root ? NULL : next;
+}
+
 char *
 sch_name (sch_node * node)
 {
     return (char *) xmlGetProp (node, (xmlChar *) "name");
 }
 
+/* Ignoring ancestors allows checking that this is a node with the model data directly attached. */
 char *
-sch_model (sch_node * node)
+sch_model (sch_node * node, bool ignore_ancestors)
 {
     char *model;
     while (node) {
         model = (char *) xmlGetProp (node, (xmlChar *) "model");
-        if (model) {
+        if (model || ignore_ancestors) {
             break;
         }
         node = ((xmlNode *) node)->parent;
