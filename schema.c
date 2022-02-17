@@ -560,6 +560,12 @@ sch_version (sch_node * node)
 }
 
 char *
+sch_default_value (sch_node * node)
+{
+    return (char *) xmlGetProp (node, (xmlChar *) "default");
+}
+
+char *
 sch_path (sch_node * node)
 {
     char *path = NULL;
