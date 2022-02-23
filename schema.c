@@ -886,6 +886,34 @@ parse_field (sch_instance * instance, sch_node * schema, const char *path, int f
     return rnode;
 }
 
+static void
+merge_node_into_parent (GNode *parent, GNode *node)
+{
+    for (GNode *pchild = parent->children; pchild; pchild = pchild->next)
+    {
+        if (g_strcmp0 (pchild->data, node->data) == 0)
+        {
+            /* Unlink all the children and add to the original parent */
+            GList *children = NULL;
+            for (GNode *nchild = node->children; nchild; nchild = nchild->next)
+            {
+                children = g_list_append (children, nchild);
+            }
+            for (GList *nchild = children; nchild; nchild = nchild->next)
+            {
+                g_node_unlink (nchild->data);
+                merge_node_into_parent (pchild, nchild->data);
+            }
+            g_list_free (children);
+            node->children = NULL;
+            free ((void *)node->data);
+            g_node_destroy (node);
+            return;
+        }
+    }
+    g_node_prepend (parent, node);
+}
+
 static bool
 parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *parent, int flags, int depth)
 {
@@ -904,7 +932,7 @@ parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *p
             free (field);
             if (!node)
                 return false;
-            g_node_prepend (parent, node);
+            merge_node_into_parent (parent, node);
             t = h + 2;
         }
         else if (*(h + 1) == ')')
