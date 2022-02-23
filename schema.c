@@ -1577,7 +1577,27 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
         }
     }
     else
-        json = _sch_gnode_to_json (instance, schema, node, flags, 0);
+    {
+        child = _sch_gnode_to_json (instance, schema, node, flags, 0);
+        if (child)
+        {
+            char *name;
+            if (strlen (APTERYX_NAME (node)) == 1)
+            {
+                return child;
+            }
+            else if (APTERYX_NAME (node)[0] == '/')
+            {
+                name = APTERYX_NAME (node) + 1;
+            }
+            else
+            {
+                name = APTERYX_NAME (node);
+            }
+            json = json_object ();
+            json_object_set_new (json, name, child);
+        }
+    }
     return json;
 }
 
