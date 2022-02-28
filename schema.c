@@ -1359,7 +1359,7 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
         {
             node = APTERYX_NODE (node, attr);
             DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
-            if (!(flags && SCH_F_STRIP_KEY) || xmlFirstElementChild (xml))
+            if (!(flags & SCH_F_STRIP_KEY) || xmlFirstElementChild (xml))
             {
                 APTERYX_NODE (node, g_strdup (key));
                 DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", key);
@@ -1411,30 +1411,43 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
 
     for (child = xmlFirstElementChild (xml); child; child = xmlNextElementSibling (child))
     {
-        if (flags && SCH_F_STRIP_KEY && key &&
+        if ((flags & SCH_F_STRIP_KEY) && key &&
             g_strcmp0 ((const char *) child->name, key) == 0)
         {
-            /* The only child is the key with value - GET expects /list/<key-value> with wildcard */
-            if (xmlChildElementCount (xml) == 1 && xml_node_has_content (child))
+            /* The only child is the key with value */
+            if (xmlChildElementCount (xml) == 1)
             {
-                APTERYX_NODE (node, g_strdup ("*"));
-                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
+                if (xml_node_has_content (child))
+                {
+                    /* Want all parameters for one entry in list. */
+                    APTERYX_NODE (node, g_strdup ("*"));
+                    DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
+                }
+                else
+                {
+                    /* Want one field in list element for one or more entries */
+                    APTERYX_NODE (node, g_strdup (child->name));
+                    DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", child->name);
+                }
                 break;
             }
-            /* Multiple children - but the key has a value - GET expects no value */
-            else if (xmlChildElementCount (xml) > 1 && xml_node_has_content (child))
+            /* Multiple children - make sure key appears */
+            else if (xmlChildElementCount (xml) > 1)
             {
                 APTERYX_NODE (node, g_strdup ((const char *) child->name));
                 DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
             }
         }
-        GNode *cn = _sch_xml_to_gnode (instance, schema, NULL, child, flags, depth + 1);
-        if (!cn)
+        else
         {
-            apteryx_free_tree (tree);
-            return NULL;
+            GNode *cn = _sch_xml_to_gnode (instance, schema, NULL, child, flags, depth + 1);
+            if (!cn)
+            {
+                apteryx_free_tree (tree);
+                return NULL;
+            }
+            g_node_append (node, cn);
         }
-        g_node_append (node, cn);
     }
 
     /* Get everything from here down if a trunk of a subtree */
