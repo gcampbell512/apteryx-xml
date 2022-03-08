@@ -1264,24 +1264,38 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNode * parent,
     }
     else if (!sch_is_leaf (schema))
     {
+        gboolean has_child = false;
+
         DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
-        if (parent)
-            data = xmlNewChild (parent, NULL, BAD_CAST name, NULL);
-        else
-            data = xmlNewNode (NULL, BAD_CAST name);
+        data = xmlNewNode (NULL, BAD_CAST name);
         gnode_sort_children (schema, node);
         for (GNode * child = node->children; child; child = child->next)
         {
-            _sch_gnode_to_xml (instance, schema, data, child, flags, depth + 1);
+            if (_sch_gnode_to_xml (instance, schema, data, child, flags, depth + 1))
+            {
+                has_child = true;
+            }
+        }
+        if (has_child && parent)
+        {
+            xmlAddChild (parent, data);
+        }
+        else if (!has_child)
+        {
+            xmlFreeNode (data);
+            data = NULL;
         }
     }
     else if (APTERYX_HAS_VALUE (node))
     {
-        DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), APTERYX_VALUE (node));
-        data = xmlNewNode (NULL, BAD_CAST name);
-        xmlNodeSetContent (data, (const xmlChar *) APTERYX_VALUE (node));
-        if (parent)
-            xmlAddChildList (parent, data);
+        if (!(flags & SCH_F_CONFIG) || sch_is_writable (schema))
+        {
+            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), APTERYX_VALUE (node));
+            data = xmlNewNode (NULL, BAD_CAST name);
+            xmlNodeSetContent (data, (const xmlChar *) APTERYX_VALUE (node));
+            if (parent)
+                xmlAddChildList (parent, data);
+        }
     }
 
     return data;
