@@ -1426,7 +1426,7 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
                 else
                 {
                     /* Want one field in list element for one or more entries */
-                    APTERYX_NODE (node, g_strdup (child->name));
+                    APTERYX_NODE (node, g_strdup ((const char *) child->name));
                     DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", child->name);
                 }
                 break;
