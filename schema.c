@@ -607,13 +607,32 @@ sch_is_leaf (sch_node * node)
     return true;
 }
 
+/* Elements can have different names (e.g. NODE, WATCH, REFRESH),
+ * but only count the ones whose name is NODE
+ */
+static int
+get_child_count (xmlNode *parent)
+{
+    xmlNode *iter;
+    int count = 0;
+
+    for (iter = parent->children; iter; iter = iter->next)
+    {
+        if (iter->name[0] == 'N')
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
 bool
 sch_is_list (sch_node * node)
 {
     xmlNode *xml = (xmlNode *) node;
     xmlNode *child = xml->children;
 
-    if (child && !child->next && child->type == XML_ELEMENT_NODE && child->name[0] == 'N')
+    if (child && get_child_count (xml) == 1 && child->type == XML_ELEMENT_NODE && child->name[0] == 'N')
     {
         char *name = (char *) xmlGetProp (child, (xmlChar *) "name");
         if (name && g_strcmp0 (name, "*") == 0)
