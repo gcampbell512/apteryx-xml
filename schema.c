@@ -1250,16 +1250,29 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNode * parent,
         apteryx_sort_children (node, g_strcmp0);
         for (GNode * child = node->children; child; child = child->next)
         {
+            gboolean has_child = false;
+
             DEBUG (flags, "%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
                    APTERYX_NAME (child));
             data = xmlNewNode (NULL, BAD_CAST name);
             gnode_sort_children (sch_node_child_first (schema), child);
             for (GNode * field = child->children; field; field = field->next)
             {
-                _sch_gnode_to_xml (instance, sch_node_child_first (schema), data, field,
-                                   flags, depth + 1);
+                if (_sch_gnode_to_xml (instance, sch_node_child_first (schema), data, field,
+                                       flags, depth + 1))
+                {
+                    has_child = true;
+                }
             }
-            xmlAddChildList (parent, data);
+            if (has_child)
+            {
+                xmlAddChildList (parent, data);
+            }
+            else
+            {
+                xmlFreeNode (data);
+                data = NULL;
+            }
         }
     }
     else if (!sch_is_leaf (schema))
