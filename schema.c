@@ -646,6 +646,20 @@ sch_is_list (sch_node * node)
     return false;
 }
 
+bool
+sch_is_leaf_list (sch_node * node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    xmlNode *child = xml->children;
+
+    if (!sch_is_list (node) || get_child_count (child) > 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 char *
 sch_list_key (sch_node * node)
 {
@@ -1567,7 +1581,20 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, in
         return NULL;
     }
 
-    if (sch_is_list (schema) && (flags & SCH_F_JSON_ARRAYS))
+    if (sch_is_leaf_list (schema) && (flags & SCH_F_JSON_ARRAYS))
+    {
+        data = json_array ();
+        apteryx_sort_children (node, g_strcmp0);
+
+        DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_NAME (node));
+        for (GNode * child = node->children; child; child = child->next)
+        {
+            DEBUG (flags, "%s%s", APTERYX_NAME (child), child->next ? ", " : "");
+            json_array_append_new (data, json_string ((const char* ) APTERYX_NAME (child)));
+        }
+        DEBUG (flags, "]\n");
+    }
+    else if (sch_is_list (schema) && (flags & SCH_F_JSON_ARRAYS))
     {
         data = json_array ();
         apteryx_sort_children (node, g_strcmp0);
@@ -1665,6 +1692,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
                    json_t * json, const char *name, int flags, int depth)
 {
     json_t *child;
+    json_t *kchild;
     const char *cname;
     size_t index;
     GNode *tree = NULL;
@@ -1683,42 +1711,50 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
         return NULL;
     }
 
-    /* LIST */
-    if (sch_is_list (schema) && json_is_array (json))
+    /* LEAF-LIST */
+    if (sch_is_leaf_list (schema) && json_is_array (json))
     {
-        key = sch_name (sch_node_child_first (sch_node_child_first (schema)));
+        depth++;
+        tree = node = APTERYX_NODE (NULL, g_strdup (name));
+        schema = sch_node_child_first (schema);
+        json_array_foreach (json, index, child)
+        {
+            APTERYX_LEAF_STRING (tree, json_string_value (child), json_string_value (child));
+            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", json_string_value (child), json_string_value (child));
+        }
+    }
+    /* LIST */
+    else if (sch_is_list (schema) && json_is_array (json))
+    {
+        /* Get the key for this list */
         char *kname = NULL;
+        key = sch_name (sch_node_child_first (sch_node_child_first (schema)));
         DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         depth++;
         tree = node = APTERYX_NODE (NULL, g_strdup (name));
-        json_array_foreach (json, index, child)
-        {
-            json_t *subchild;
-            const char *subname;
-            json_object_foreach (child, subname, subchild)
-            {
-                if (g_strcmp0 (subname, key) == 0)
-                {
-                    kname = decode_json_type (subchild);
-                    break;
-                }
-            }
-            if (kname)
-                break;
-        }
-        if (!kname)
-        {
-            ERROR (flags, SCH_E_KEYMISSING, "List \"%s\" missng key \"%s\"\n", name, key);
-            apteryx_free_tree (tree);
-            return NULL;
-        }
-        node = APTERYX_NODE (tree, kname);
-        DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
         schema = sch_node_child_first (schema);
         json_array_foreach (json, index, child)
         {
             json_t *subchild;
             const char *subname;
+
+            /* Get the key name for this json object and create a GNode with it */
+            kchild = json_object_get (child, key);
+            if (kchild)
+            {
+                kname = decode_json_type (kchild);
+            }
+            if (!kname)
+            {
+                ERROR (flags, SCH_E_KEYMISSING, "List \"%s\" missing key \"%s\"\n", name, key);
+                apteryx_free_tree (tree);
+                return NULL;
+            }
+
+            node = APTERYX_NODE (tree, kname);
+            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+
+            /* Prepend each key-value pair of this object into the node */
             json_object_foreach (child, subname, subchild)
             {
                 GNode *cn = _sch_json_to_gnode (instance, schema, subchild, subname, flags, depth + 1);
@@ -1727,7 +1763,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
                     apteryx_free_tree (tree);
                     return NULL;
                 }
-                g_node_append (node, cn);
+                g_node_prepend (node, cn);
             }
         }
     }
@@ -1805,7 +1841,17 @@ sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, in
     json_object_foreach (json, key, child)
     {
         if (schema)
-            depth = sch_node_height (schema);
+        {
+            sch_node * child_schema = sch_node_child (schema, key);
+            if (child_schema)
+            {
+                depth = sch_node_height (child_schema);
+            }
+            else
+            {
+                depth = sch_node_height (schema);
+            }
+        }
         node = _sch_json_to_gnode (instance, schema, child, key, flags, depth);
         if (!node)
         {
