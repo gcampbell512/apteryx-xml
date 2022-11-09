@@ -308,6 +308,49 @@ match_name (const char *s1, const char *s2)
     return false;
 }
 
+static bool
+remove_hidden_children (xmlNode *node)
+{
+    char *mode;
+    xmlNode *child;
+
+    if (node == NULL)
+        return false;
+
+    /* Keep all the value nodes */
+    if (node->name[0] == 'V')
+        return true;
+
+    if (sch_is_hidden (node))
+        return false;
+
+    child = node->children;
+    while (child)
+    {
+        if (!remove_hidden_children (child))
+        {
+            xmlNode *dchild = child;
+            child = child->next;
+            xmlUnlinkNode (dchild);
+            xmlFreeNode (dchild);
+        }
+        else
+        {
+            child = child->next;
+        }
+    }
+
+    /* If it doesn't have a mode, and there are no children, pretend it doesn't exist */
+    mode = (char *)xmlGetProp (node, (xmlChar *) "mode");
+    if (mode == NULL && node->children == NULL)
+    {
+        return false;
+    }
+    xmlFree(mode);
+
+    return true;
+}
+
 char *
 sch_dump_xml (sch_instance * schema)
 {
@@ -315,7 +358,10 @@ sch_dump_xml (sch_instance * schema)
     xmlChar *xmlbuf = NULL;
     int bufsize;
 
-    xmlDocDumpFormatMemory (xml->doc, &xmlbuf, &bufsize, 1);
+    xmlDoc *copy = xmlCopyDoc (xml->doc, 1);
+    remove_hidden_children (xmlDocGetRootElement (copy));
+    xmlDocDumpFormatMemory (copy, &xmlbuf, &bufsize, 1);
+    xmlFreeDoc (copy);
     return (char *) xmlbuf;
 }
 
@@ -687,6 +733,20 @@ sch_is_writable (sch_node * node)
     bool access = false;
     char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
     if (mode && strchr (mode, 'w') != NULL)
+    {
+        access = true;
+    }
+    free (mode);
+    return access;
+}
+
+bool
+sch_is_hidden (sch_node * node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    bool access = false;
+    char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
+    if (mode && strchr (mode, 'h') != NULL)
     {
         access = true;
     }
