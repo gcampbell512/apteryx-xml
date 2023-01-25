@@ -168,8 +168,8 @@ add_module_info_to_node(xmlNode * node)
 }
 
 /* Merge nodes from a new tree to the original tree */
-static xmlNode *
-merge_nodes (xmlNode * orig, xmlNode * new, int depth)
+static void
+merge_nodes (xmlNode * parent, xmlNode * orig, xmlNode * new, int depth)
 {
     xmlNode *n;
     xmlNode *o;
@@ -187,7 +187,7 @@ merge_nodes (xmlNode * orig, xmlNode * new, int depth)
         if (o)
         {
             /* Already exists - merge in the children */
-            o->children = merge_nodes (o->children, n->children, depth + 1);
+            merge_nodes (o, o->children, n->children, depth + 1);
         }
         else
         {
@@ -209,18 +209,10 @@ merge_nodes (xmlNode * orig, xmlNode * new, int depth)
                 }
             }
 
-            /* Add as a sibling to the existing tree node */
-            if (orig)
-            {
-                xmlAddSibling (orig, o);
-            }
-            else
-            {
-                orig = o;
-            }
+            /* Add as a child to the existing tree node */
+            xmlAddChild (parent, o);
         }
     }
-    return orig;
 }
 
 /* Remove unwanted nodes and attributes from a parsed tree */
@@ -271,8 +263,8 @@ sch_load (const char *path)
             continue;
         }
         cleanup_nodes (xmlDocGetRootElement (new)->children);
-        xmlDocGetRootElement (doc)->children = merge_nodes (xmlDocGetRootElement (doc)->children,
-                                                            xmlDocGetRootElement (new)->children, 0);
+        merge_nodes (xmlDocGetRootElement (doc), xmlDocGetRootElement (doc)->children,
+                     xmlDocGetRootElement (new)->children, 0);
         xmlFreeDoc (new);
     }
     g_list_free_full (files, free);
