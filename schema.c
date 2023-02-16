@@ -1678,7 +1678,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, in
     }
     else if (APTERYX_HAS_VALUE (node))
     {
-        char *value = strdup (APTERYX_VALUE (node));
+        char *value = strdup (APTERYX_VALUE (node) ? APTERYX_VALUE (node) : "");
         if (flags & SCH_F_JSON_TYPES)
         {
             value = sch_translate_to (schema, value);
