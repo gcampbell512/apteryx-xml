@@ -710,7 +710,7 @@ sch_is_readable (sch_node * node)
     xmlNode *xml = (xmlNode *) node;
     bool access = false;
     char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
-    if (!mode || strchr (mode, 'r') != NULL)
+    if (!mode || strchr (mode, 'r') != NULL || strchr (mode, 'p') != NULL)
     {
         access = true;
     }
@@ -753,6 +753,20 @@ sch_is_config (sch_node * node)
     bool access = false;
     char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
     if (mode && strchr (mode, 'c') != NULL)
+    {
+        access = true;
+    }
+    free (mode);
+    return access;
+}
+
+bool
+sch_is_proxy (sch_node * node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    bool access = false;
+    char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
+    if (mode && strchr (mode, 'p') != NULL)
     {
         access = true;
     }
@@ -1076,7 +1090,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
         }
 
         /* Find schema node */
-        if (!schema)
+        if (!schema || sch_is_proxy (schema))
             schema = lookup_node (ns ?: namespace, instance, name);
         else
             schema = _sch_node_child (ns ?: namespace, schema, name);
