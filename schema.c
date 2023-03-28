@@ -1648,11 +1648,11 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, in
         data = json_array ();
         apteryx_sort_children (node, g_strcmp0);
 
-        DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_NAME (node));
+        DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_VALUE (node));
         for (GNode * child = node->children; child; child = child->next)
         {
-            DEBUG (flags, "%s%s", APTERYX_NAME (child), child->next ? ", " : "");
-            json_array_append_new (data, json_string ((const char* ) APTERYX_NAME (child)));
+            DEBUG (flags, "%s%s", APTERYX_VALUE (child), child->next ? ", " : "");
+            json_array_append_new (data, json_string ((const char* ) APTERYX_VALUE (child)));
         }
         DEBUG (flags, "]\n");
     }
