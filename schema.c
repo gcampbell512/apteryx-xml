@@ -108,9 +108,6 @@ sch_ns_node_equal (xmlNode * a, xmlNode * b)
 {
     char *a_name = NULL;
     char *b_name = NULL;
-    xmlNsPtr *a_ns = NULL;
-    xmlNsPtr *b_ns = NULL;
-    xmlNsPtr *cur;
     bool ret = FALSE;
 
     /* Must have matching names */
@@ -121,50 +118,17 @@ sch_ns_node_equal (xmlNode * a, xmlNode * b)
         goto exit;
     }
 
-    /* Must have at least one namespace (href) in common */
-    a_ns = xmlGetNsList (a->doc, a);
-    b_ns = xmlGetNsList (b->doc, b);
-    cur = a_ns;
-    while (*cur)
+    /* Must have matching namespaces */
+    if ((a->ns == b->ns) ||
+        (a->ns && b->ns && g_strcmp0 ((const char *)a->ns->href, (const char *)b->ns->href) == 0))
     {
-        if (g_strcmp0 ((const char *) (*cur)->prefix, "xsi") != 0 &&
-            xmlSearchNsByHref (b->doc, b, (*cur)->href))
-        {
-            ret = TRUE;
-            goto exit;
-        }
-        cur++;
+        ret = TRUE;
     }
 
 exit:
-    if (a_ns)
-        xmlFree (a_ns);
-    if (b_ns)
-        xmlFree (b_ns);
     free (a_name);
     free (b_name);
     return ret;
-}
-
-/* Add model name, organisation and revision to the given node. This data is fetched from ancestor nodes */
-void
-add_module_info_to_node(xmlNode * node)
-{
-    xmlChar *mod = (xmlChar *) sch_model ((sch_node *) node, false);
-    xmlChar *org = (xmlChar *) sch_organization ((sch_node *) node);
-    xmlChar *ver = (xmlChar *) sch_version ((sch_node *) node);
-    if (mod) {
-        xmlNewProp(node, (const xmlChar *)"model", mod);
-        xmlFree(mod);
-    }
-    if(org) {
-        xmlNewProp (node, (const xmlChar *) "organization", org);
-        xmlFree(org);
-    }
-    if(ver) {
-        xmlNewProp (node, (const xmlChar *) "version", ver);
-        xmlFree(ver);
-    }
 }
 
 /* Merge nodes from a new tree to the original tree */
@@ -191,23 +155,8 @@ merge_nodes (xmlNode * parent, xmlNode * orig, xmlNode * new, int depth)
         }
         else
         {
-            /* Need to add model data to the root of this branch */
-            add_module_info_to_node(n);
-
             /* New node */
             o = xmlCopyNode (n, 1);
-
-            /* Need to add top-level namespaces to the root of this branch */
-            if (!n->nsDef && n->parent && n->parent->nsDef)
-            {
-                xmlNs *ns = n->parent->nsDef;
-                while (ns)
-                {
-                    if (ns->prefix && g_strcmp0 ((char *) ns->prefix, "xsi") != 0)
-                        xmlNewNs (o, ns->href, ns->prefix);
-                    ns = ns->next;
-                }
-            }
 
             /* Add as a child to the existing tree node */
             xmlAddChild (parent, o);
@@ -238,34 +187,129 @@ cleanup_nodes (xmlNode * node)
     }
 }
 
+/* Add module organisation and revision to the first child(ren) that matches the namespace */
+static void
+add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *org, xmlChar *ver)
+{
+    xmlNode *n = node;
+    while (n)
+    {
+        if (n->ns && g_strcmp0 ((char *)n->ns->href, (char *)ns->href) == 0)
+        {
+            if (!xmlHasProp (n, (const xmlChar *)"model"))
+            {
+                xmlNewProp (n, (const xmlChar *)"model", mod);
+                xmlNewProp (n, (const xmlChar *)"organization", org);
+                xmlNewProp (n, (const xmlChar *)"version", ver);
+            }
+        }
+        else
+        {
+            add_module_info_to_children (n->children, ns, mod, org, ver);
+        }
+        n = n->next;
+    }
+}
+
+static void
+add_module_info_to_child (xmlNode *module)
+{
+    xmlChar *mod = xmlGetProp (module, (xmlChar *)"model");
+    xmlChar *org = xmlGetProp (module, (xmlChar *)"organization");
+    xmlChar *ver = xmlGetProp (module, (xmlChar *)"version");
+    xmlNsPtr def = xmlSearchNs (module->doc, module, NULL);
+    add_module_info_to_children (module->children, def, mod, org, ver);
+    if (mod)
+        xmlFree (mod);
+    if (org)
+        xmlFree (org);
+    if (ver)
+        xmlFree (ver);
+}
+
+static void
+copy_nsdef_to_root (xmlDoc *doc, xmlNode *node)
+{
+    xmlNode *n = node;
+    while (n)
+    {
+        /* Copy any NS defintions to the new root */
+        xmlNsPtr ns = n->nsDef;
+        while (ns)
+        {
+            if (ns->prefix && !xmlSearchNsByHref (doc, xmlDocGetRootElement (doc), ns->href))
+            {
+                xmlNewNs (xmlDocGetRootElement (doc), ns->href, ns->prefix);
+            }
+            ns = ns->next;
+        }
+
+        /* Recurse */
+        copy_nsdef_to_root (doc, n->children);
+        n = n->next;
+    }
+}
+
+void
+assign_ns_to_root (xmlDoc *doc, xmlNode *node)
+{
+    xmlNode *n = node;
+    while (n)
+    {
+        /* Assign this nodes ns to the new root if needed */
+        if (n->ns) {
+            n->ns = xmlSearchNsByHref (doc, xmlDocGetRootElement (doc), n->ns->href);
+        }
+
+        /* Recurse */
+        assign_ns_to_root (doc, n->children);
+
+        /* Chuck away the local NS */
+        if (n->nsDef) {
+            xmlFreeNsList (n->nsDef);
+            n->nsDef = NULL;
+        }
+
+        n = n->next;
+     }
+ }
+
 /* Parse all XML files in the search path and merge trees */
 sch_instance *
 sch_load (const char *path)
 {
-    xmlDoc *doc = NULL;
+    xmlDoc *doc;
+    xmlNode *module;
     GList *files = NULL;
     GList *iter;
 
-    /* Create a new doc and root node */
+    /* Create a new doc and root node for the merged MODULE */
     doc = xmlNewDoc ((xmlChar *) "1.0");
-    xmlDocSetRootElement (doc, xmlNewNode (NULL, (xmlChar *) "MODULE"));
-    xmlNewNs (xmlDocGetRootElement (doc), (const xmlChar *) "http://www.w3.org/2001/XMLSchema-instance", (const xmlChar *) "xsi");
-    xmlNewProp (xmlDocGetRootElement (doc), (const xmlChar *) "xsi:schemaLocation",
+    module = xmlNewNode (NULL, (xmlChar *) "MODULE");
+    // TODO configurable default namespace
+    xmlNewNs (module, (const xmlChar *) "https://github.com/alliedtelesis/apteryx", NULL);
+    xmlNewNs (module, (const xmlChar *) "http://www.w3.org/2001/XMLSchema-instance", (const xmlChar *) "xsi");
+    xmlNewProp (module, (const xmlChar *) "xsi:schemaLocation",
         (const xmlChar *) "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd");
+    xmlDocSetRootElement (doc, module);
+
     list_xml_files (&files, path);
     for (iter = files; iter; iter = g_list_next (iter))
     {
         char *filename = (char *) iter->data;
-        xmlDoc *new = xmlParseFile (filename);
-        if (new == NULL)
+        xmlDoc *doc_new = xmlParseFile (filename);
+        if (doc_new == NULL)
         {
             syslog (LOG_ERR, "XML: failed to parse \"%s\"", filename);
             continue;
         }
-        cleanup_nodes (xmlDocGetRootElement (new)->children);
-        merge_nodes (xmlDocGetRootElement (doc), xmlDocGetRootElement (doc)->children,
-                     xmlDocGetRootElement (new)->children, 0);
-        xmlFreeDoc (new);
+        xmlNode *module_new = xmlDocGetRootElement (doc_new);
+        cleanup_nodes (module_new);
+        copy_nsdef_to_root (doc, module_new);
+        add_module_info_to_child (module_new);
+        merge_nodes (module, module->children, module_new->children, 0);
+        xmlFreeDoc (doc_new);
+        assign_ns_to_root (doc, module->children);
     }
     g_list_free_full (files, free);
 
@@ -360,6 +404,9 @@ sch_dump_xml (sch_instance * schema)
 bool
 sch_ns_match (xmlNode *node, const char *namespace)
 {
+    /* Check for default namespace match */
+    if (namespace == NULL && (!node->ns || node->ns->prefix == NULL))
+        return TRUE;
     return xmlSearchNs (node->doc, node, (const xmlChar *)namespace) != NULL;
 }
 
