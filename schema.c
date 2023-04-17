@@ -407,7 +407,22 @@ sch_ns_match (xmlNode *node, const char *namespace)
     /* Check for default namespace match */
     if (namespace == NULL && (!node->ns || node->ns->prefix == NULL))
         return TRUE;
-    return xmlSearchNs (node->doc, node, (const xmlChar *)namespace) != NULL;
+    /* Check for a prefix match */
+    if (xmlSearchNs (node->doc, node, (const xmlChar *)namespace) != NULL)
+        return TRUE;
+    /* Check for a model match */
+    while (namespace && node)
+    {
+        char *model = (char *) xmlGetProp (node, (xmlChar *) "model");
+        if (model)
+        {
+            if (g_strcmp0 (model, namespace) == 0)
+                return TRUE;
+            return FALSE;
+        }
+        node = node->parent;
+    }
+    return FALSE;
 }
 
 static xmlNode *
