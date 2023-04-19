@@ -421,7 +421,7 @@ sch_ns_match (xmlNode *node, const char *namespace)
 }
 
 static xmlNode *
-lookup_node (char *namespace, xmlNode * node, const char *path)
+lookup_node (const char *namespace, xmlNode * node, const char *path)
 {
     xmlNode *n;
     char *name, *mode;
@@ -1178,7 +1178,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
 
         /* Find schema node */
         if (!schema || sch_is_proxy (schema))
-            schema = lookup_node (namespace, instance, name);
+            schema = lookup_node ((const char *)namespace, instance, name);
         else
             schema = _sch_node_child (namespace, schema, name);
         if (schema == NULL)
@@ -1543,26 +1543,59 @@ xml_node_has_content (xmlNode * xml)
 }
 
 static GNode *
-_sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
+_sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * namespace, GNode * parent,
                    xmlNode * xml, int flags, int depth)
 {
-    const char *name = (const char *) xml->name;
+    char *name = (char *) xml->name;
     xmlNode *child;
     char *attr;
     GNode *tree = NULL;
     GNode *node = NULL;
     char *key = NULL;
 
+    /* Detect change in namespace */
+    if (xml->ns && xml->ns->href)
+    {
+        xmlNsPtr ns = NULL;
+
+        // TODO configurable default namespace
+        if (g_strcmp0 ((const char *)xml->ns->href, "https://github.com/alliedtelesis/apteryx") == 0)
+        {
+            namespace = NULL;
+        }
+        else if (schema)
+        {
+            ns = xmlSearchNsByHref (((xmlNode *)instance)->doc, schema, xml->ns->href);
+        }
+        else
+        {
+            child = ((xmlNode *)instance)->children;
+            while (child)
+            {
+                ns = xmlSearchNsByHref (((xmlNode *)instance)->doc, child, xml->ns->href);
+                if (ns)
+                    break;
+                child = child->next;
+            }
+        }
+        if (ns)
+            namespace = (const char *) ns->prefix;
+    }
+
     /* Find schema node */
     if (!schema)
-        schema = sch_lookup (instance, name);
+        schema = lookup_node (namespace, instance, name);
     else
-        schema = sch_node_child (schema, name);
+        schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
     {
         ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for xml node %s\n", name);
         return NULL;
     }
+
+    /* Prepend non default namespaces to root nodes */
+    if (depth == 0 && namespace)
+        name = g_strdup_printf ("%s:%s", namespace, (const char *) xml->name);
 
     /* LIST */
     if (sch_is_list (schema))
@@ -1657,11 +1690,12 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
         }
         else
         {
-            GNode *cn = _sch_xml_to_gnode (instance, schema, NULL, child, flags, depth + 1);
+            GNode *cn = _sch_xml_to_gnode (instance, schema, namespace, NULL, child, flags, depth + 1);
             if (!cn)
             {
                 apteryx_free_tree (tree);
-                return NULL;
+                tree = NULL;
+                goto exit;
             }
             g_node_append (node, cn);
         }
@@ -1675,6 +1709,9 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, GNode * parent,
         DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
     }
 
+exit:
+    if (depth == 0 && namespace)
+        free (name);
     free (key);
     return tree;
 }
@@ -1683,7 +1720,7 @@ GNode *
 sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags)
 {
     tl_error = SCH_E_SUCCESS;
-    return _sch_xml_to_gnode (instance, schema, NULL, xml, flags, 0);
+    return _sch_xml_to_gnode (instance, schema, NULL, NULL, xml, flags, 0);
 }
 
 static char *
