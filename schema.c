@@ -413,8 +413,13 @@ sch_ns_match (xmlNode *node, const char *namespace)
     }
 
     /* Check for a prefix match */
-    if (xmlSearchNs (node->doc, node, (const xmlChar *)namespace) != NULL)
-        return TRUE;
+    // TODO this allows /t2:test/settings/aug2:speed to match t2:speed
+    while (node && node->type == XML_ELEMENT_NODE)
+    {
+        if (node->ns && node->ns->prefix && g_strcmp0 ((const char *)node->ns->prefix, namespace) == 0)
+            return TRUE;
+        node = node->parent;
+    }
 
     /* No match */
     return FALSE;
@@ -1415,18 +1420,18 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, char *namespace, 
 
     /* Find schema node */
     if (!schema)
-        schema = sch_lookup (instance, name);
+        schema = lookup_node (namespace, instance, name);
     else
-        schema = sch_node_child (schema, name);
+        schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
     {
-        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for gnode %s\n", name);
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for gnode %s:%s\n", namespace, name);
         free (ns);
         return NULL;
     }
     if (!sch_is_readable (schema))
     {
-        ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
+        ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s:%s\n", namespace, name);
         free (ns);
         return NULL;
     }
@@ -1589,7 +1594,7 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
         schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
     {
-        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for xml node %s\n", name);
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for xml node %s:%s\n", namespace, name);
         return NULL;
     }
 
@@ -1794,13 +1799,13 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, char *namespace,
         schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
     {
-        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for gnode %s\n", name);
+        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for gnode %s:%s\n", namespace, name);
         free (ns);
         return NULL;
     }
     if (!sch_is_readable (schema))
     {
-        ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
+        ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s:%s\n", namespace, name);
         free (ns);
         return NULL;
     }
