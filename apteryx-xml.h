@@ -75,6 +75,7 @@ typedef enum
     SCH_F_JSON_TYPES = 0x8,
     SCH_F_XPATH = 0x10,
     SCH_F_CONFIG = 0x20,
+    SCH_F_NS_MODEL_NAME = 0x40,
 } sch_flags;
 GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags);
 #ifdef APTERYX_XML_LIBXML2
