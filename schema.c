@@ -1144,6 +1144,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
     GNode *child = NULL;
     char *query = NULL;
     char *pred = NULL;
+    char *equals = NULL;
     char *ns = NULL;
     char *name = NULL;
 
@@ -1178,6 +1179,17 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
             {
                 char *temp = strndup (name, pred - name);
                 pred = strdup (pred);
+                free (name);
+                name = temp;
+            }
+        }
+        else
+        {
+            equals = strchr (name, '=');
+            if (equals)
+            {
+                char *temp = strndup (name, equals - name);
+                equals = strdup (equals + 1);
                 free (name);
                 name = temp;
             }
@@ -1236,6 +1248,15 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
                 }
             }
             g_free (pred);
+            schema = sch_node_child_first (schema);
+        }
+        else if (equals && sch_is_list (schema))
+        {
+            child = APTERYX_NODE (NULL, g_strdup (equals));
+            g_node_prepend (rnode, child);
+            depth++;
+            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
+            g_free (equals);
             schema = sch_node_child_first (schema);
         }
 
