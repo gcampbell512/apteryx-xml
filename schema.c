@@ -1124,8 +1124,10 @@ convert_model_to_prefix (xmlNode *node, char *ns)
                 {
                     namespace = strdup ((char *) node->ns->prefix);
                 }
+                free (model);
                 return namespace;
             }
+            free (model);
         }
         /* Check parent */
         node = node->next;
@@ -1652,9 +1654,11 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
             node = APTERYX_NODE (tree, g_strdup (""));
             DEBUG (flags, "%*s%s = NULL\n", depth * 2, " ", name);
         }
-        else if (xml_node_has_content (xml))
+        else if (xml_node_has_content (xml) && !(flags & SCH_F_STRIP_DATA))
         {
-            node = APTERYX_NODE (tree, (char *) xmlNodeGetContent (xml));
+            char *value = (char *) xmlNodeGetContent (xml);
+            value = sch_translate_from (schema, value);
+            node = APTERYX_NODE (tree, value);
             DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
         }
         else
