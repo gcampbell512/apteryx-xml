@@ -100,6 +100,7 @@ list_xml_files (GList ** files, const char *path)
         dpath = strtok_r (NULL, ":", &saveptr);
     }
     free (cpath);
+    *files = g_list_sort (*files, (GCompareFunc) strcasecmp);
     return;
 }
 
@@ -145,6 +146,32 @@ merge_nodes (xmlNode * parent, xmlNode * orig, xmlNode * new, int depth)
         {
             if (sch_ns_node_equal (n, o))
             {
+                /* May need to set the model info even if this is a match */
+                xmlChar *mod_n = xmlGetProp (n, (xmlChar *)"model");
+                if (mod_n)
+                {
+                    xmlChar *mod_o = xmlGetProp (o, (xmlChar *)"model");
+                    if (!mod_o)
+                    {
+                        xmlChar *org = xmlGetProp (n, (xmlChar *)"organization");
+                        xmlChar *ver = xmlGetProp (n, (xmlChar *)"version");
+                        xmlNewProp (o, (const xmlChar *)"model", mod_n);
+                        xmlNewProp (o, (const xmlChar *)"organization", org);
+                        xmlNewProp (o, (const xmlChar *)"version", ver);
+                        xmlFree (org);
+                        xmlFree (ver);
+                    }
+                    else if (g_strcmp0 ((char *) mod_o, (char *) mod_n) != 0)
+                    {
+                        xmlChar *name = xmlGetProp (n, (xmlChar *)"name");
+                        syslog (LOG_ERR, "XML: Conflicting model names in same namespace \"%s:%s\" \"%s:%s\"",
+                            (char *) mod_o, (char *) name, (char *) mod_n, (char *) name);
+                        xmlFree (name);
+                    }
+                    xmlFree (mod_n);
+                    if (mod_o)
+                        xmlFree (mod_o);
+                }
                 break;
             }
         }
