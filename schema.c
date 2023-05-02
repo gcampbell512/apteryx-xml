@@ -1815,7 +1815,7 @@ decode_json_type (json_t *json)
 }
 
 static json_t *
-encode_json_type (char *val)
+encode_json_type (sch_node *schema, char *val)
 {
     json_t *json = NULL;
     json_int_t i;
@@ -1823,13 +1823,19 @@ encode_json_type (char *val)
 
     if (*val != '\0')
     {
-        i = strtoll (val, &p, 10);
-        if (*p == '\0')
-            json = json_integer (i);
-        if (g_strcmp0 (val, "true") == 0)
-            json = json_true ();
-        if (g_strcmp0 (val, "false") == 0)
-            json = json_false ();
+        /* Only try and detect non string types if no pattern and not enum */
+        char *pattern = (char *) xmlGetProp ((xmlNode *)schema, (xmlChar *) "pattern");
+        if (((xmlNode *)schema)->children || pattern)
+        {
+            i = strtoll (val, &p, 10);
+            if (*p == '\0')
+                json = json_integer (i);
+            if (g_strcmp0 (val, "true") == 0)
+                json = json_true ();
+            if (g_strcmp0 (val, "false") == 0)
+                json = json_false ();
+        }
+        free (pattern);
     }
     if (!json)
         json = json_string (val);
@@ -1936,7 +1942,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, char *namespace,
         if (flags & SCH_F_JSON_TYPES)
         {
             value = sch_translate_to (schema, value);
-            data = encode_json_type (value);
+            data = encode_json_type (schema, value);
         }
         else
             data = json_string (value);
