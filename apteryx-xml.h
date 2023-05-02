@@ -52,6 +52,7 @@ char *sch_name (sch_node * node);
 char *sch_model (sch_node * node, bool ignore_ancestors);
 char *sch_organization (sch_node * node);
 char *sch_version (sch_node * node);
+char *sch_namespace (sch_node * node);
 char *sch_default_value (sch_node * node);
 char *sch_path (sch_node * node);
 bool sch_is_leaf (sch_node * node);

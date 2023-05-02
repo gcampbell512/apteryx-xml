@@ -696,6 +696,17 @@ sch_version (sch_node * node)
 }
 
 char *
+sch_namespace (sch_node * node)
+{
+    xmlNode *xml = ((xmlNode *) node);
+    if (xml->ns && xml->ns->href)
+    {
+        return g_strdup ((char *) xml->ns->href);
+    }
+    return NULL;
+}
+
+char *
 sch_default_value (sch_node * node)
 {
     return (char *) xmlGetProp (node, (xmlChar *) "default");
