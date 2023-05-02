@@ -559,6 +559,13 @@ _sch_node_child (const char *namespace, sch_node * parent, const char *child)
 }
 
 sch_node *
+sch_node_parent (sch_node *node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    return (sch_node *) xml->parent;
+}
+
+sch_node *
 sch_node_child (sch_node * parent, const char *child)
 {
     return _sch_node_child (NULL, parent, child);
@@ -1163,8 +1170,9 @@ convert_model_to_prefix (xmlNode *node, char *ns)
 }
 
 static GNode *
-_sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace, const char *path, int flags, int depth)
+_sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespace, const char *path, int flags, int depth)
 {
+    sch_node *schema = rschema && *rschema ? *rschema : instance;
     const char *next = NULL;
     GNode *node = NULL;
     GNode *rnode = NULL;
@@ -1185,7 +1193,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
         {
             namespace = strndup (path, ns - path);
             if (flags & SCH_F_NS_MODEL_NAME)
-                namespace = convert_model_to_prefix (schema ?: sch_node_child_first (instance), namespace);
+                namespace = convert_model_to_prefix (rschema && *rschema ? *rschema : sch_node_child_first (instance), namespace);
             path = ns + 1;
             ns = namespace; /* Need to free this */
         }
@@ -1289,7 +1297,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
 
         if (next)
         {
-            node = _sch_path_to_query (instance, schema, namespace, next, flags, depth + 1);
+            node = _sch_path_to_query (instance, &schema, namespace, next, flags, depth + 1);
             if (!node)
             {
                 free ((void *)rnode->data);
@@ -1331,7 +1339,7 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
             }
             free (query);
         }
-        else if (sch_node_child_first (schema))
+        else if (sch_node_child_first (schema) && !(flags & SCH_F_STRIP_DATA))
         {
             /* Get everything from here down if we do not already have a star */
             if (child && g_strcmp0 (APTERYX_NAME (child), "*") != 0)
@@ -1348,13 +1356,15 @@ _sch_path_to_query (sch_instance * instance, sch_node * schema, char *namespace,
     }
 
 exit:
+    if (rschema)
+        *rschema = schema;
     free (name);
     free (ns);
     return rnode;
 }
 
 GNode *
-sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags)
+sch_path_to_query (sch_instance * instance, sch_node ** schema, const char *path, int flags)
 {
     tl_error = SCH_E_SUCCESS;
     return _sch_path_to_query (instance, schema, NULL, path, flags, 0);
@@ -1970,7 +1980,7 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
 }
 
 static GNode *
-_sch_json_to_gnode (sch_instance * instance, sch_node * schema,
+_sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *namespace,
                    json_t * json, const char *name, int flags, int depth)
 {
     json_t *child;
@@ -1984,9 +1994,9 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
 
     /* Find schema node */
     if (!schema)
-        schema = sch_lookup (instance, name);
+        schema = lookup_node (namespace, instance, name);
     else
-        schema = sch_node_child (schema, name);
+        schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
     {
         ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for json node %s\n", name);
@@ -2039,7 +2049,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
             /* Prepend each key-value pair of this object into the node */
             json_object_foreach (child, subname, subchild)
             {
-                GNode *cn = _sch_json_to_gnode (instance, schema, subchild, subname, flags, depth + 1);
+                GNode *cn = _sch_json_to_gnode (instance, schema, namespace, subchild, subname, flags, depth + 1);
                 if (!cn)
                 {
                     apteryx_free_tree (tree);
@@ -2056,7 +2066,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema,
         tree = node = APTERYX_NODE (NULL, g_strdup_printf ("%s%s", depth ? "" : "/", name));
         json_object_foreach (json, cname, child)
         {
-            GNode *cn = _sch_json_to_gnode (instance, schema, child, cname, flags, depth + 1);
+            GNode *cn = _sch_json_to_gnode (instance, schema, namespace, child, cname, flags, depth + 1);
             if (!cn)
             {
                 apteryx_free_tree (tree);
@@ -2112,6 +2122,7 @@ sch_node_height (sch_node * schema)
 GNode *
 sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, int flags)
 {
+    const char *namespace = schema ? (const char *) ((xmlNode *) schema)->ns->prefix : NULL;
     const char *key;
     json_t *child;
     GNode *root;
@@ -2134,7 +2145,7 @@ sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, in
                 depth = sch_node_height (schema);
             }
         }
-        node = _sch_json_to_gnode (instance, schema, child, key, flags, depth);
+        node = _sch_json_to_gnode (instance, schema, namespace, child, key, flags, depth);
         if (!node)
         {
             apteryx_free_tree (root);
