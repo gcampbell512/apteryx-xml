@@ -2008,9 +2008,10 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
 }
 
 static GNode *
-_sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *namespace,
+_sch_json_to_gnode (sch_instance * instance, sch_node * schema, char *namespace,
                    json_t * json, const char *name, int flags, int depth)
 {
+    char *ns;
     json_t *child;
     json_t *kchild;
     const char *cname;
@@ -2020,6 +2021,17 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *name
     char *key = NULL;
     char *value;
 
+    /* Check for a change in namespace */
+    ns = strchr (name, ':');
+    if (ns)
+    {
+        namespace = strndup (name, ns - name);
+        if (flags & SCH_F_NS_MODEL_NAME)
+            namespace = convert_model_to_prefix (sch_node_child_first (schema), namespace);
+        name = ns + 1;
+        ns = namespace; /* Need to free this */
+    }
+
     /* Find schema node */
     if (!schema)
         schema = lookup_node (namespace, instance, name);
@@ -2028,6 +2040,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *name
     if (schema == NULL)
     {
         ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for json node %s\n", name);
+        free (ns);
         return NULL;
     }
 
@@ -2068,6 +2081,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *name
             {
                 ERROR (flags, SCH_E_KEYMISSING, "List \"%s\" missing key \"%s\"\n", name, key);
                 apteryx_free_tree (tree);
+                free (ns);
                 return NULL;
             }
 
@@ -2081,6 +2095,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *name
                 if (!cn)
                 {
                     apteryx_free_tree (tree);
+                    free (ns);
                     return NULL;
                 }
                 g_node_prepend (node, cn);
@@ -2098,6 +2113,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *name
             if (!cn)
             {
                 apteryx_free_tree (tree);
+                free (ns);
                 return NULL;
             }
             g_node_append (node, cn);
@@ -2109,6 +2125,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *name
         if (!sch_is_writable (schema))
         {
             ERROR (flags, SCH_E_NOTWRITABLE, "Node \"%s\" not writable\n", name);
+            free (ns);
             return NULL;
         }
 
@@ -2122,15 +2139,18 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, const char *name
                 DEBUG (flags, "Invalid value \"%s\" for node \"%s\"\n", value, name);
                 free (value);
                 apteryx_free_tree (tree);
+                free (ns);
                 return NULL;
             }
         }
         node = APTERYX_NODE (tree, value);
         DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+        free (ns);
         return tree;
     }
 
     free (key);
+    free (ns);
     return tree;
 }
 
@@ -2150,7 +2170,7 @@ sch_node_height (sch_node * schema)
 GNode *
 sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, int flags)
 {
-    const char *namespace = schema ? (const char *) ((xmlNode *) schema)->ns->prefix : NULL;
+    char *namespace = schema ? (char *) ((xmlNode *) schema)->ns->prefix : NULL;
     const char *key;
     json_t *child;
     GNode *root;
