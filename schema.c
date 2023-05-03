@@ -562,7 +562,9 @@ sch_node *
 sch_node_parent (sch_node *node)
 {
     xmlNode *xml = (xmlNode *) node;
-    return (sch_node *) xml->parent;
+    if (xml->type == XML_ELEMENT_NODE && xml->name[0] == 'N')
+        return (sch_node *) xml->parent;
+    return NULL;
 }
 
 sch_node *
