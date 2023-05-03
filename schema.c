@@ -1323,6 +1323,13 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
             char *ptr = NULL;
             char *parameter;
 
+            /* If a list we need to wildcard the entry name */
+            if (sch_is_list (schema))
+            {
+                child = APTERYX_NODE (rnode, g_strdup ("*"));
+                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
+            }
+
             /* Split query after '?' by '&' */
             query = g_strdup (query + 1);
             parameter = strtok_r (query, "&", &ptr);
@@ -1330,7 +1337,7 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
             {
                 if (strncmp (parameter, "fields=", strlen ("fields=")) == 0)
                 {
-                    if (!parse_fields (instance, schema, parameter + strlen ("fields="), rnode, flags, depth + 1))
+                    if (!parse_fields (instance, schema, parameter + strlen ("fields="), child ? : rnode, flags, depth + 1))
                     {
                         apteryx_free_tree (rnode);
                         rnode = NULL;
