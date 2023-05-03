@@ -1199,15 +1199,6 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
         path++;
 
         /* Parse path element */
-        ns = strchr (path, ':');
-        if (ns)
-        {
-            namespace = strndup (path, ns - path);
-            if (flags & SCH_F_NS_MODEL_NAME)
-                namespace = convert_model_to_prefix (rschema && *rschema ? *rschema : sch_node_child_first (instance), namespace);
-            path = ns + 1;
-            ns = namespace; /* Need to free this */
-        }
         query = strchr (path, '?');
         next = strchr (path, '/');
         if (query && (!next || query < next))
@@ -1216,6 +1207,17 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
             name = strndup (path, next - path);
         else
             name = strdup (path);
+        ns = strchr (name, ':');
+        if (ns)
+        {
+            char *_name = strdup (ns + 1);
+            namespace = strndup (name, ns - name);
+            if (flags & SCH_F_NS_MODEL_NAME)
+                namespace = convert_model_to_prefix (sch_node_child_first (schema), namespace);
+            free (name);
+            name = _name;
+            ns = namespace; /* Need to free this */
+        }
         if (query && next && query < next)
             next = NULL;
         if (flags & SCH_F_XPATH)
