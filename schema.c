@@ -570,7 +570,8 @@ sch_node_parent (sch_node *node)
 sch_node *
 sch_node_child (sch_node * parent, const char *child)
 {
-    return _sch_node_child (NULL, parent, child);
+    char *namespace = parent ? (char *) ((xmlNode *) parent)->ns->prefix : NULL;
+    return _sch_node_child (namespace, parent, child);
 }
 
 sch_node *
