@@ -1155,11 +1155,15 @@ parse_query_fields (sch_instance * instance, sch_node * schema, char *fields, GN
 }
 
 static bool
-add_all_query_nodes (sch_node *schema, GNode *parent, bool config, bool state, int flags, int depth)
+add_all_query_nodes (sch_node *schema, GNode *parent, bool config, bool state, int flags, int depth, int max)
 {
     GNode *node = parent;
-    char *name = sch_name (schema);
+    char *name;
 
+    if (depth > max)
+        return true;
+
+    name = sch_name (schema);
     if (sch_is_leaf (schema))
     {
         if ((config && sch_is_writable (schema)) ||
@@ -1175,9 +1179,13 @@ add_all_query_nodes (sch_node *schema, GNode *parent, bool config, bool state, i
         node = APTERYX_NODE (parent, name);
         DEBUG (flags, "%*s%s\n", depth * 2, " ", name);
         name = NULL;
-        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+
+        /* Star nodes do not count when counting depth */
+        if (!sch_is_list (sch_node_parent (schema)))
+            depth++;
+        for (sch_node *s = sch_node_child_first (schema); s && depth <= max; s = sch_node_next_sibling (s))
         {
-            if (!add_all_query_nodes (s, node, config, state, flags, depth + 1))
+            if (!add_all_query_nodes (s, node, config, state, flags, depth, max))
                 return false;
         }
     }
@@ -1194,7 +1202,7 @@ parse_query_content (sch_instance *instance, sch_node *schema, char *content, GN
         for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
         {
             /* Recurse tree only adding config elements */
-            if (!add_all_query_nodes (s, parent, true, false, flags, depth))
+            if (!add_all_query_nodes (s, parent, true, false, flags, depth, INT_MAX))
                 return false;
         }
         return true;
@@ -1204,18 +1212,46 @@ parse_query_content (sch_instance *instance, sch_node *schema, char *content, GN
         for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
         {
             /* Recurse tree only adding nonconfig elements */
-            if (!add_all_query_nodes (s, parent, false, true, flags, depth))
+            if (!add_all_query_nodes (s, parent, false, true, flags, depth, INT_MAX))
                 return false;
         }
+        return true;
     }
     else if (g_strcmp0 (content, "all") == 0)
     {
         /* Nothing to do as this is the default */
         return true;
     }
-    else 
+    else
     {
         ERROR (flags, SCH_E_INVALIDQUERY, "Do not support content query type \"%s\"\n", content);
+        return false;
+    }
+}
+
+static bool
+parse_query_depth (sch_instance *instance, sch_node *schema, char *value, GNode *parent, int flags, int depth)
+{
+    uint64_t num = g_ascii_strtoll (value, NULL, 10);
+    if (num > 0 && num < 65535)
+    {
+        /* Recurse tree only adding config elements until the depth is reached */
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            /* Recurse tree only adding nonconfig elements */
+            if (!add_all_query_nodes (s, parent, true, true, flags, depth + 1, depth + num - 1))
+                return false;
+        }
+        return true;
+    }
+    else if (g_strcmp0 (value, "unbounded") == 0)
+    {
+        /* Nothing to do as this is the default */
+        return true;
+    }
+    else
+    {
+        ERROR (flags, SCH_E_INVALIDQUERY, "Do not support depth query of \"%s\"\n", value);
         return false;
     }
 }
@@ -1262,6 +1298,9 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
     char *equals = NULL;
     char *ns = NULL;
     char *name = NULL;
+    bool fields_seen = false;
+    bool content_seen = false;
+    bool depth_seen = false;
 
     if (path && path[0] == '/')
     {
@@ -1391,8 +1430,6 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
         }
         else if (query)
         {
-            bool fields_seen = false;
-            bool content_seen = false;
             char *ptr = NULL;
             char *parameter;
 
@@ -1434,6 +1471,18 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
                     }
                     content_seen = true;
                 }
+                else if (!depth_seen && strncmp (parameter, "depth=", strlen ("depth=")) == 0 && value && strlen (value) > 0)
+                {
+                    if (!parse_query_depth (instance, schema, value, child ? : rnode, flags, depth + 1))
+                    {
+                        apteryx_free_tree (rnode);
+                        rnode = NULL;
+                        free (query);
+                        goto exit;
+                    }
+                    if (g_strcmp0 (value, "unbounded") != 0)
+                        depth_seen = true;
+                }
                 else
                 {
                     ERROR (flags, SCH_E_INVALIDQUERY, "Do not support query \"%s\"\n", parameter);
@@ -1448,17 +1497,13 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
         }
         
         /* We may need to add a wildcard to get everything from here down */
-        if (!next && sch_node_child_first (schema) && !(flags & SCH_F_STRIP_DATA))
+        if (!next && !depth_seen && sch_node_child_first (schema) && !(flags & SCH_F_STRIP_DATA))
         {
             /* Get everything from here down if we do not already have a star */
-            if (child && !g_node_first_child(child) && g_strcmp0 (APTERYX_NAME (child), "*") != 0)
+            node = child ?: rnode;
+            if (node && !g_node_first_child(node) && g_strcmp0 (APTERYX_NAME (node), "*") != 0)
             {
-                APTERYX_NODE (child, g_strdup ("*"));
-                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
-            }
-            else if (!g_node_first_child (rnode) && g_strcmp0 (APTERYX_NAME (rnode), "*") != 0)
-            {
-                APTERYX_NODE (rnode, g_strdup ("*"));
+                APTERYX_NODE (node, g_strdup ("*"));
                 DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
             }
         }
