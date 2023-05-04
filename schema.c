@@ -1027,7 +1027,7 @@ sch_validate_pattern (sch_node * node, const char *value)
 
 /* Data translation/manipulation */
 
-static bool parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *parent, int flags, int depth);
+static bool parse_query_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *parent, int flags, int depth);
 static GNode *
 parse_field (sch_instance * instance, sch_node * schema, const char *path, int flags, int depth)
 {
@@ -1084,7 +1084,7 @@ parse_field (sch_instance * instance, sch_node * schema, const char *path, int f
     else if (sublist)
     {
         char *fields = g_strndup (sublist + 1, strlen (sublist) - 2);
-        if (!parse_fields (instance, schema, fields, rnode, flags, depth + 1))
+        if (!parse_query_fields (instance, schema, fields, rnode, flags, depth + 1))
         {
             free ((void *)rnode->data);
             g_node_destroy (rnode);
@@ -1126,7 +1126,7 @@ merge_node_into_parent (GNode *parent, GNode *node)
 }
 
 static bool
-parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *parent, int flags, int depth)
+parse_query_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *parent, int flags, int depth)
 {
     char *h, *t;
     bool skip = false;
@@ -1152,6 +1152,72 @@ parse_fields (sch_instance * instance, sch_node * schema, char *fields, GNode *p
         h++;
     }
     return true;
+}
+
+static bool
+add_all_query_nodes (sch_node *schema, GNode *parent, bool config, bool state, int flags, int depth)
+{
+    GNode *node = parent;
+    char *name = sch_name (schema);
+
+    if (sch_is_leaf (schema))
+    {
+        if ((config && sch_is_writable (schema)) ||
+            (state && !sch_is_writable (schema) && sch_is_readable (schema)))
+        {
+            APTERYX_NODE (parent, name);
+            DEBUG (flags, "%*s%s\n", depth * 2, " ", name);
+            name = NULL;
+        }
+    }
+    else
+    {
+        node = APTERYX_NODE (parent, name);
+        DEBUG (flags, "%*s%s\n", depth * 2, " ", name);
+        name = NULL;
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            if (!add_all_query_nodes (s, node, config, state, flags, depth + 1))
+                return false;
+        }
+    }
+
+    free (name);
+    return true;
+}
+
+static bool
+parse_query_content (sch_instance *instance, sch_node *schema, char *content, GNode *parent, int flags, int depth)
+{
+    if (g_strcmp0 (content, "config") == 0)
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            /* Recurse tree only adding config elements */
+            if (!add_all_query_nodes (s, parent, true, false, flags, depth))
+                return false;
+        }
+        return true;
+    }
+    else if (g_strcmp0 (content, "nonconfig") == 0)
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            /* Recurse tree only adding nonconfig elements */
+            if (!add_all_query_nodes (s, parent, false, true, flags, depth))
+                return false;
+        }
+    }
+    else if (g_strcmp0 (content, "all") == 0)
+    {
+        /* Nothing to do as this is the default */
+        return true;
+    }
+    else 
+    {
+        ERROR (flags, SCH_E_INVALIDQUERY, "Do not support content query type \"%s\"\n", content);
+        return false;
+    }
 }
 
 static char *
@@ -1325,30 +1391,48 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
         }
         else if (query)
         {
+            bool fields_seen = false;
+            bool content_seen = false;
             char *ptr = NULL;
             char *parameter;
-
-            /* If a list we need to wildcard the entry name */
-            if (sch_is_list (schema))
-            {
-                child = APTERYX_NODE (rnode, g_strdup ("*"));
-                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
-            }
 
             /* Split query after '?' by '&' */
             query = g_strdup (query + 1);
             parameter = strtok_r (query, "&", &ptr);
             while (parameter)
             {
-                if (strncmp (parameter, "fields=", strlen ("fields=")) == 0)
+                char *value = strchr (parameter, '=');
+                if (value)
+                    value++;
+                if (!fields_seen && strncmp (parameter, "fields=", strlen ("fields=")) == 0 && value && strlen (value) > 0)
                 {
-                    if (!parse_fields (instance, schema, parameter + strlen ("fields="), child ? : rnode, flags, depth + 1))
+                    /* If a list we need to wildcard the entry name before adding field query */
+                    if (sch_is_list (schema))
+                    {
+                        child = APTERYX_NODE (rnode, g_strdup ("*"));
+                        DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
+                    }
+
+                    /* Parse fields into the query tree */
+                    if (!parse_query_fields (instance, schema, value, child ? : rnode, flags, depth + 1))
                     {
                         apteryx_free_tree (rnode);
                         rnode = NULL;
                         free (query);
                         goto exit;
                     }
+                    fields_seen = true;
+                }
+                else if (!content_seen && strncmp (parameter, "content=", strlen ("content=")) == 0 && value && strlen (value) > 0)
+                {
+                    if (!parse_query_content (instance, schema, value, child ? : rnode, flags, depth + 1))
+                    {
+                        apteryx_free_tree (rnode);
+                        rnode = NULL;
+                        free (query);
+                        goto exit;
+                    }
+                    content_seen = true;
                 }
                 else
                 {
@@ -1362,15 +1446,17 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
             }
             free (query);
         }
-        else if (sch_node_child_first (schema) && !(flags & SCH_F_STRIP_DATA))
+        
+        /* We may need to add a wildcard to get everything from here down */
+        if (!next && sch_node_child_first (schema) && !(flags & SCH_F_STRIP_DATA))
         {
             /* Get everything from here down if we do not already have a star */
-            if (child && g_strcmp0 (APTERYX_NAME (child), "*") != 0)
+            if (child && !g_node_first_child(child) && g_strcmp0 (APTERYX_NAME (child), "*") != 0)
             {
                 APTERYX_NODE (child, g_strdup ("*"));
                 DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
             }
-            else if (g_strcmp0 (APTERYX_NAME (rnode), "*") != 0)
+            else if (!g_node_first_child (rnode) && g_strcmp0 (APTERYX_NAME (rnode), "*") != 0)
             {
                 APTERYX_NODE (rnode, g_strdup ("*"));
                 DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
