@@ -34,6 +34,15 @@ typedef enum
 sch_err sch_last_err (void);
 const char * sch_last_errmsg (void);
 
+typedef struct _sch_loaded_model
+{
+    char *ns;
+    char *model;
+    char *organization;
+    char *prefix;
+    char *version;
+} sch_loaded_model;
+
 /* Schema */
 typedef void sch_instance;
 typedef void sch_node;
@@ -41,6 +50,7 @@ sch_instance *sch_load (const char *path);
 void sch_free (sch_instance * schema);
 sch_node *sch_lookup (sch_instance * schema, const char *path);
 char *sch_dump_xml (sch_instance * schema);
+GList *sch_get_loaded_models (sch_instance * schema);
 
 sch_node *sch_node_parent (sch_node *node);
 sch_node *sch_node_child (sch_node *parent, const char *name);
@@ -81,17 +91,7 @@ typedef enum
     SCH_F_STRIP_DATA = 0x80,
 } sch_flags;
 
-typedef struct _sch_loaded_model
-{
-    char *ns;
-    char *model;
-    char *organization;
-    char *prefix;
-    char *version;
-} sch_loaded_model;
-
 GNode *sch_path_to_query (sch_instance * instance, sch_node ** schema, const char * path, int flags);
-GList *sch_get_loaded_models (void);
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
 xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags);

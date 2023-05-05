@@ -51,8 +51,6 @@ static __thread char tl_errmsg[BUFSIZ] = {0};
         DEBUG (flags, fmt, ## args); \
     }
 
-static GList *loaded_models = NULL;
-
 /* Retrieve the last error code */
 sch_err
 sch_last_err (void)
@@ -241,7 +239,7 @@ add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *
 }
 
 static void
-add_module_info_to_child (xmlNode *module)
+add_module_info_to_child (xmlDoc *doc, xmlNode *module)
 {
     sch_loaded_model *loaded;
     xmlChar *mod = xmlGetProp (module, (xmlChar *)"model");
@@ -275,7 +273,7 @@ add_module_info_to_child (xmlNode *module)
         {
             loaded->version = g_strdup ((char *) ver);
         }
-        loaded_models = g_list_append (loaded_models, loaded);
+        doc->_private = (void *) g_list_append ((GList *) doc->_private, loaded);
     }
 
     add_module_info_to_children (module->children, def, mod, org, ver);
@@ -366,7 +364,7 @@ sch_load (const char *path)
         xmlNode *module_new = xmlDocGetRootElement (doc_new);
         cleanup_nodes (module_new);
         copy_nsdef_to_root (doc, module_new);
-        add_module_info_to_child (module_new);
+        add_module_info_to_child (doc, module_new);
         merge_nodes (module, module->children, module_new->children, 0);
         xmlFreeDoc (doc_new);
         assign_ns_to_root (doc, module->children);
@@ -377,7 +375,7 @@ sch_load (const char *path)
 }
 
 static void
-sch_free_loaded_models (void)
+sch_free_loaded_models (GList *loaded_models)
 {
     GList *list;
     sch_loaded_model *loaded;
@@ -418,14 +416,15 @@ void
 sch_free (sch_instance * schema)
 {
     xmlNode *xml = (xmlNode *) schema;
+    sch_free_loaded_models (xml->doc->_private);
     xmlFreeDoc (xml->doc);
-    sch_free_loaded_models ();
 }
 
 GList *
-sch_get_loaded_models (void)
+sch_get_loaded_models (sch_instance * schema)
 {
-    return loaded_models;
+    xmlNode *xml = (xmlNode *) schema;
+    return (GList *) xml->doc->_private;
 }
 
 static gboolean
