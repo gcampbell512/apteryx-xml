@@ -80,7 +80,18 @@ typedef enum
     SCH_F_NS_MODEL_NAME = 0x40,
     SCH_F_STRIP_DATA = 0x80,
 } sch_flags;
+
+typedef struct _sch_loaded_model
+{
+    char *ns;
+    char *model;
+    char *organization;
+    char *prefix;
+    char *version;
+} sch_loaded_model;
+
 GNode *sch_path_to_query (sch_instance * instance, sch_node ** schema, const char * path, int flags);
+GList *sch_get_loaded_models (void);
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
 xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags);

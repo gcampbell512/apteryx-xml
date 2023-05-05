@@ -51,6 +51,8 @@ static __thread char tl_errmsg[BUFSIZ] = {0};
         DEBUG (flags, fmt, ## args); \
     }
 
+static GList *loaded_models = NULL;
+
 /* Retrieve the last error code */
 sch_err
 sch_last_err (void)
@@ -241,10 +243,41 @@ add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *
 static void
 add_module_info_to_child (xmlNode *module)
 {
+    sch_loaded_model *loaded;
     xmlChar *mod = xmlGetProp (module, (xmlChar *)"model");
     xmlChar *org = xmlGetProp (module, (xmlChar *)"organization");
     xmlChar *ver = xmlGetProp (module, (xmlChar *)"version");
     xmlNsPtr def = xmlSearchNs (module->doc, module, NULL);
+
+    loaded = g_malloc0 (sizeof (sch_loaded_model));
+    if (loaded)
+    {
+        if (module->ns)
+        {
+            if (module->ns->href)
+            {
+                loaded->ns = g_strdup ((char *) module->ns->href);
+            }
+            if (module->ns->prefix)
+            {
+                loaded->prefix = g_strdup ((char *) module->ns->prefix);
+            }
+        }
+        if (mod)
+        {
+            loaded->model = g_strdup ((char *) mod);
+        }
+        if (org)
+        {
+            loaded->organization = g_strdup ((char *) org);
+        }
+        if (ver)
+        {
+            loaded->version = g_strdup ((char *) ver);
+        }
+        loaded_models = g_list_append (loaded_models, loaded);
+    }
+
     add_module_info_to_children (module->children, def, mod, org, ver);
     if (mod)
         xmlFree (mod);
@@ -343,11 +376,56 @@ sch_load (const char *path)
     return (sch_instance *) xmlDocGetRootElement (doc);
 }
 
+static void
+sch_free_loaded_models (void)
+{
+    GList *list;
+    sch_loaded_model *loaded;
+
+    if (loaded_models)
+    {
+        for (list = g_list_first (loaded_models); list; list = g_list_next (list))
+        {
+            loaded = list->data;
+            if (loaded->ns)
+            {
+                g_free (loaded->ns);
+            }
+            if (loaded->model)
+            {
+                g_free (loaded->model);
+            }
+            if (loaded->organization)
+            {
+                g_free (loaded->organization);
+            }
+            if (loaded->prefix)
+            {
+                g_free (loaded->prefix);
+            }
+            if (loaded->version)
+            {
+                g_free (loaded->version);
+            }
+            g_free (loaded);
+        }
+        g_list_free (loaded_models);
+        loaded_models = NULL;
+    }
+}
+
 void
 sch_free (sch_instance * schema)
 {
     xmlNode *xml = (xmlNode *) schema;
     xmlFreeDoc (xml->doc);
+    sch_free_loaded_models ();
+}
+
+GList *
+sch_get_loaded_models (void)
+{
+    return loaded_models;
 }
 
 static gboolean
