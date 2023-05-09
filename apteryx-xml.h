@@ -89,9 +89,18 @@ typedef enum
     SCH_F_CONFIG = 0x20,
     SCH_F_NS_MODEL_NAME = 0x40,
     SCH_F_STRIP_DATA = 0x80,
+    SCH_F_DEPTH_ONE = 0x100,
+    SCH_F_WITH_DEFAULTS = 0x200,
+    SCH_F_TRIM_DEFAULTS = 0x400,
 } sch_flags;
 
-GNode *sch_path_to_query (sch_instance * instance, sch_node ** schema, const char * path, int flags);
+void sch_populate_default_nodes (sch_instance * instance, sch_node * schema, GNode * node);
+void sch_trim_default_nodes (sch_instance * instance, sch_node * schema, GNode * node);
+
+GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char * path, int flags, sch_node ** rschema);
+bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags);
+
+GNode *sch_path_to_query (sch_instance * instance, sch_node ** schema, const char * path, int flags); //DEPRECATED
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
 xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags);

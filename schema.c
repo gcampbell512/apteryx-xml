@@ -1269,8 +1269,9 @@ add_all_query_nodes (sch_node *schema, GNode *parent, bool config, bool state, i
 }
 
 static bool
-process_query (GNode *root, sch_node *schema, char *query, int flags, int depth)
+_sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, int depth)
 {
+    int flags = rflags? * rflags : 0;
     GNode *node;
     char *ptr = NULL;
     char *parameter;
@@ -1317,6 +1318,20 @@ process_query (GNode *root, sch_node *schema, char *query, int flags, int depth)
                     ERROR (flags, SCH_E_INVALIDQUERY, "Do not support depth query of \"%s\"\n", value);
                     goto exit;
                 }
+                if (qdepth == 1)
+                    flags |= SCH_F_DEPTH_ONE;
+            }
+        }
+        else if (strncmp (parameter, "with-defaults=", strlen ("with-defaults=")) == 0)
+        {
+            if (g_strcmp0 (value, "report-all") == 0)
+                flags |= SCH_F_WITH_DEFAULTS;
+            else if (g_strcmp0 (value, "trim") == 0)
+                flags |= SCH_F_TRIM_DEFAULTS;
+            else if (g_strcmp0 (value, "explicit") != 0)
+            {
+                ERROR (flags, SCH_E_INVALIDQUERY, "Do not support with-defaults query type \"%s\"\n", value);
+                goto exit;
             }
         }
         else
@@ -1375,6 +1390,17 @@ process_query (GNode *root, sch_node *schema, char *query, int flags, int depth)
 exit:
     free (qfields);
     free (query);
+    if (rc && rflags)
+        *rflags = flags;
+    return rc;
+}
+
+bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags)
+{
+    int _flags = flags;
+    bool rc = _sch_query_to_gnode (parent, schema ?: instance, (char *) query, &_flags, 0);
+    if (rflags)
+        *rflags = _flags;
     return rc;
 }
 
@@ -1408,7 +1434,7 @@ convert_model_to_prefix (xmlNode *node, char *ns)
 }
 
 static GNode *
-_sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespace, const char *path, int flags, int depth)
+_sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, char *namespace, const char *path, int flags, int depth)
 {
     sch_node *schema = rschema && *rschema ? *rschema : instance;
     const char *next = NULL;
@@ -1537,7 +1563,7 @@ _sch_path_to_query (sch_instance * instance, sch_node ** rschema, char *namespac
 
         if (next)
         {
-            node = _sch_path_to_query (instance, &schema, namespace, next, flags, depth + 1);
+            node = _sch_path_to_gnode (instance, &schema, namespace, next, flags, depth + 1);
             if (!node)
             {
                 free ((void *)rnode->data);
@@ -1555,6 +1581,12 @@ exit:
     free (name);
     free (ns);
     return rnode;
+}
+
+GNode *
+sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char *path, int flags, sch_node ** rschema)
+{
+    return _sch_path_to_gnode (instance, rschema, NULL, path, flags, 0);
 }
 
 GNode *
@@ -1576,7 +1608,7 @@ sch_path_to_query (sch_instance * instance, sch_node ** rschema, const char *pat
 
     /* Parse the path first */
     tl_error = SCH_E_SUCCESS;
-    root = _sch_path_to_query (instance, &schema, NULL, path, flags, 0);
+    root = _sch_path_to_gnode (instance, &schema, NULL, path, flags, 0);
     if (!root)
     {
         free (_path);
@@ -1585,14 +1617,14 @@ sch_path_to_query (sch_instance * instance, sch_node ** rschema, const char *pat
 
     /* Process the query */
     depth = g_node_max_height (root);
-    if (query && !process_query (root, schema, query, flags, g_node_max_height (root)))
+    if (query && !_sch_query_to_gnode (root, schema, query, &flags, depth))
     {
         apteryx_free_tree (root);
         root = NULL;
     }
 
     /* Without a query we may need to add a wildcard to get everything from here down */
-    if (!query || (depth == g_node_max_height (root) && !g_strrstr (query, "depth=1")))
+    if (!query || (depth == g_node_max_height (root) && !(flags & SCH_F_DEPTH_ONE)))
     {
         if (schema && sch_node_child_first (schema) && !(flags & SCH_F_STRIP_DATA))
         {
@@ -2076,6 +2108,114 @@ encode_json_type (sch_node *schema, char *val)
     return json;
 }
 
+static void
+_sch_traverse_nodes (sch_node * schema, GNode * parent, int action)
+{
+    char *name = sch_name (schema);
+    GNode *child = apteryx_find_child (parent, name);
+    if (sch_is_leaf (schema))
+    {
+        /* We do not need to do anything at all if this leaf does not have a default */
+        char *value = sch_default_value (schema);
+        if (value)
+        {
+            value = sch_translate_from (schema, value);
+            if (action == SCH_F_WITH_DEFAULTS)
+            {
+                /* Add completely missing leaves */
+                if (!child)
+                {
+                    child = APTERYX_LEAF (parent, name, value);
+                    name = NULL;
+                    value = NULL;
+                }
+                /* Add missing values */
+                else if (!APTERYX_HAS_VALUE (child))
+                {
+                    APTERYX_NODE (child->children, value);
+                    value = NULL;
+                }
+                /* Replace empty value */
+                else if (APTERYX_VALUE (child) == NULL || g_strcmp0 (APTERYX_VALUE (child), "") == 0)
+                {
+                    free (child->children->data);
+                    child->children->data = value;
+                    value = NULL;
+                }
+            }
+            if (action == SCH_F_TRIM_DEFAULTS)
+            {
+                if (child && g_strcmp0 (APTERYX_VALUE (child), value) == 0)
+                {
+                    free ((void *)child->data);
+                    g_node_destroy (child);
+                }
+            }
+            free (value);
+        }
+    }
+    else if (g_strcmp0 (name, "*") == 0)
+    {
+        for (GNode *child = parent->children; child; child = child->next)
+        {
+            for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+            {
+                _sch_traverse_nodes (s, child, action);
+            }
+        }
+    }
+    else
+    {
+        if (!child && !sch_is_list (schema) && action == SCH_F_WITH_DEFAULTS)
+        {
+            child = APTERYX_NODE (parent, name);
+            name = NULL;
+        }
+        if (child)
+        {
+            for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+            {
+                _sch_traverse_nodes (s, child, action);
+            }
+        }
+    }
+
+    free (name);
+    return;
+}
+
+void
+sch_populate_default_nodes (sch_instance * instance, sch_node * schema, GNode * node)
+{
+    if (sch_is_leaf (schema))
+    {
+        _sch_traverse_nodes (schema, node->parent, SCH_F_WITH_DEFAULTS);
+    }
+    else
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            _sch_traverse_nodes (s, node, SCH_F_WITH_DEFAULTS);
+        }
+    }
+}
+
+void
+sch_trim_default_nodes (sch_instance * instance, sch_node * schema, GNode * node)
+{
+    if (sch_is_leaf (schema))
+    {
+        _sch_traverse_nodes (schema, node->parent, SCH_F_TRIM_DEFAULTS);
+    }
+    else
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            _sch_traverse_nodes (s, node, SCH_F_TRIM_DEFAULTS);
+        }
+    }
+}
+
 static json_t *
 _sch_gnode_to_json (sch_instance * instance, sch_node * schema, char *namespace, GNode * node, int flags, int depth)
 {
@@ -2191,6 +2331,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, char *namespace,
 json_t *
 sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
+    char *namespace = schema ? (char *) ((xmlNode *) schema)->ns->prefix : NULL;
     json_t *json = NULL;
     json_t *child;
 
@@ -2198,7 +2339,7 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
     if (schema)
     {
         schema = ((xmlNode *)schema)->parent;
-        child = _sch_gnode_to_json (instance, schema, NULL, node, flags, g_node_max_height (node));
+        child = _sch_gnode_to_json (instance, schema, namespace, node, flags, g_node_max_height (node));
         if (child)
         {
             json = json_object ();
@@ -2207,7 +2348,7 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
     }
     else
     {
-        child = _sch_gnode_to_json (instance, schema, NULL, node, flags, 0);
+        child = _sch_gnode_to_json (instance, schema, namespace, node, flags, 0);
         if (child)
         {
             char *name;
