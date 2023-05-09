@@ -1325,7 +1325,7 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
         else if (strncmp (parameter, "with-defaults=", strlen ("with-defaults=")) == 0)
         {
             if (g_strcmp0 (value, "report-all") == 0)
-                flags |= SCH_F_WITH_DEFAULTS;
+                flags |= SCH_F_ADD_DEFAULTS;
             else if (g_strcmp0 (value, "trim") == 0)
                 flags |= SCH_F_TRIM_DEFAULTS;
             else if (g_strcmp0 (value, "explicit") != 0)
@@ -1590,9 +1590,8 @@ sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char *path,
 }
 
 GNode *
-sch_path_to_query (sch_instance * instance, sch_node ** rschema, const char *path, int flags)
+sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path, int flags)
 {
-    sch_node *schema = rschema && *rschema ? *rschema : instance;
     char *_path = NULL;
     char *query;
     GNode *root;
@@ -1642,8 +1641,6 @@ sch_path_to_query (sch_instance * instance, sch_node ** rschema, const char *pat
     }
 
     free (_path);
-    if (rschema)
-        *rschema = schema;
     return root;
 }
 
@@ -2108,19 +2105,46 @@ encode_json_type (sch_node *schema, char *val)
     return json;
 }
 
-static void
-_sch_traverse_nodes (sch_node * schema, GNode * parent, int action)
+static bool
+_sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
 {
     char *name = sch_name (schema);
     GNode *child = apteryx_find_child (parent, name);
+    bool rc = true;
+
     if (sch_is_leaf (schema))
     {
-        /* We do not need to do anything at all if this leaf does not have a default */
-        char *value = sch_default_value (schema);
-        if (value)
+        if (!child && flags & SCH_F_ADD_MISSING_NULL)
         {
-            value = sch_translate_from (schema, value);
-            if (action == SCH_F_WITH_DEFAULTS)
+            child = APTERYX_LEAF (parent, name, strdup (""));
+            name = NULL;
+        }
+        else if (child && flags & SCH_F_SET_NULL)
+        {
+            if (sch_is_hidden (schema))
+            {
+                DEBUG (flags, "Silently ignoring node \"%s\"\n", name);
+                free ((void *)child->children->data);
+                free ((void *)child->data);
+                g_node_destroy (child);
+            }
+            else if (!sch_is_writable (schema))
+            {
+                ERROR (flags, SCH_E_NOTWRITABLE, "Node not writable \"%s\"\n", name);
+                rc = false;
+                goto exit;
+            }
+            else
+            {
+                free (child->children->data);
+                child->children->data = strdup ("");
+            }
+        }
+        else if (flags & SCH_F_ADD_DEFAULTS)
+        {
+            /* We do not need to do anything at all if this leaf does not have a default */
+            char *value = sch_translate_from (schema, sch_default_value (schema));
+            if (value)
             {
                 /* Add completely missing leaves */
                 if (!child)
@@ -2142,14 +2166,17 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int action)
                     child->children->data = value;
                     value = NULL;
                 }
+                free (value);
             }
-            if (action == SCH_F_TRIM_DEFAULTS)
+        }
+        else if (child && flags & SCH_F_TRIM_DEFAULTS)
+        {
+            char *value = sch_translate_from (schema, sch_default_value (schema));
+            if (g_strcmp0 (APTERYX_VALUE (child), value) == 0)
             {
-                if (child && g_strcmp0 (APTERYX_VALUE (child), value) == 0)
-                {
-                    free ((void *)child->data);
-                    g_node_destroy (child);
-                }
+                free ((void *)child->children->data);
+                free ((void *)child->data);
+                g_node_destroy (child);
             }
             free (value);
         }
@@ -2160,13 +2187,26 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int action)
         {
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                _sch_traverse_nodes (s, child, action);
+                rc = _sch_traverse_nodes (s, child, flags);
+                if (!rc)
+                    goto exit;
+            }
+        }
+    }
+    else if (sch_is_leaf_list (schema))
+    {
+        if (flags & SCH_F_SET_NULL)
+        {
+            for (GNode *child = parent->children->children; child; child = child->next)
+            {
+                free (child->children->data);
+                child->children->data = strdup ("");
             }
         }
     }
     else
     {
-        if (!child && !sch_is_list (schema) && action == SCH_F_WITH_DEFAULTS)
+        if (!child && !sch_is_list (schema) && (flags & (SCH_F_ADD_DEFAULTS|SCH_F_ADD_MISSING_NULL)))
         {
             child = APTERYX_NODE (parent, name);
             name = NULL;
@@ -2175,45 +2215,43 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int action)
         {
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                _sch_traverse_nodes (s, child, action);
+                rc = _sch_traverse_nodes (s, child, flags);
+                if (!rc)
+                    goto exit;
+            }
+            /* Prune empty branches */
+            if (!child->children)
+            {
+                free (child->data);
+                g_node_destroy (child);
             }
         }
     }
 
+exit:
     free (name);
-    return;
+    return rc;
 }
 
-void
-sch_populate_default_nodes (sch_instance * instance, sch_node * schema, GNode * node)
+bool
+sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
+    bool rc;
+    schema = schema ?: instance;
     if (sch_is_leaf (schema))
     {
-        _sch_traverse_nodes (schema, node->parent, SCH_F_WITH_DEFAULTS);
+        rc = _sch_traverse_nodes (schema, node->parent, flags);
     }
     else
     {
         for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
         {
-            _sch_traverse_nodes (s, node, SCH_F_WITH_DEFAULTS);
+            rc = _sch_traverse_nodes (s, node, flags);
+            if (!rc)
+                break;
         }
     }
-}
-
-void
-sch_trim_default_nodes (sch_instance * instance, sch_node * schema, GNode * node)
-{
-    if (sch_is_leaf (schema))
-    {
-        _sch_traverse_nodes (schema, node->parent, SCH_F_TRIM_DEFAULTS);
-    }
-    else
-    {
-        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
-        {
-            _sch_traverse_nodes (s, node, SCH_F_TRIM_DEFAULTS);
-        }
-    }
+    return rc;
 }
 
 static json_t *
