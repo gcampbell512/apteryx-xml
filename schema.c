@@ -1275,10 +1275,14 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
     GNode *node;
     char *ptr = NULL;
     char *parameter;
+    bool content_seen = false;
+    bool depth_seen = false;
+    bool with_defaults_seen = false;
     bool config = true;
     bool nonconfig = true;
     char *qfields = NULL;
     int qdepth = INT_MAX;
+
     bool rc = false;
 
     /* Parse all queries out of uri first */
@@ -1291,13 +1295,18 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
         {
             if (qfields)
             {
-                ERROR (flags, SCH_E_INVALIDQUERY, "Do not support multiple field queries\n");
+                ERROR (flags, SCH_E_INVALIDQUERY, "Do not support multiple \"field\" queries\n");
                 goto exit;
             }
             qfields = g_strdup (parameter + strlen ("fields="));
         }
         else if (strncmp (parameter, "content=", strlen ("content=")) == 0)
         {
+            if (content_seen)
+            {
+                ERROR (flags, SCH_E_INVALIDQUERY, "Do not support multiple \"content\" queries\n");
+                goto exit;
+            }
             if (g_strcmp0 (value, "config") == 0)
                 nonconfig = false;
             else if (g_strcmp0 (value, "nonconfig") == 0)
@@ -1307,9 +1316,15 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
                 ERROR (flags, SCH_E_INVALIDQUERY, "Do not support content query type \"%s\"\n", value);
                 goto exit;
             }
+            content_seen = true;
         }
         else if (strncmp (parameter, "depth=", strlen ("depth=")) == 0)
         {
+            if (depth_seen)
+            {
+                ERROR (flags, SCH_E_INVALIDQUERY, "Do not support multiple \"depth\" queries\n");
+                goto exit;
+            }
             if (g_strcmp0 (value, "unbounded") != 0)
             {
                 qdepth = g_ascii_strtoll (value, NULL, 10);
@@ -1321,9 +1336,15 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
                 if (qdepth == 1)
                     flags |= SCH_F_DEPTH_ONE;
             }
+            depth_seen = true;
         }
         else if (strncmp (parameter, "with-defaults=", strlen ("with-defaults=")) == 0)
         {
+            if (with_defaults_seen)
+            {
+                ERROR (flags, SCH_E_INVALIDQUERY, "Do not support multiple \"with-defaults\" queries\n");
+                goto exit;
+            }
             if (g_strcmp0 (value, "report-all") == 0)
                 flags |= SCH_F_ADD_DEFAULTS;
             else if (g_strcmp0 (value, "trim") == 0)
@@ -1333,6 +1354,7 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
                 ERROR (flags, SCH_E_INVALIDQUERY, "Do not support with-defaults query type \"%s\"\n", value);
                 goto exit;
             }
+            with_defaults_seen = true;
         }
         else
         {
