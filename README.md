@@ -142,6 +142,7 @@ api.test.list('cat_nip').sub_list('horse').i_d = nil
 ## Conversion between other formats
 
 ### Generate paths in C header file format
+
 ```shell
 ./xml2c <module>.xml
 ```
@@ -156,7 +157,13 @@ api.test.list('cat_nip').sub_list('horse').i_d = nil
 *From YANG to Apteryx-XML*
 
 ```shell
-pyang --ignore-errors -f yin <module>.yang | xsltproc yin2xml.xsl -
+pyang --plugindir . -f apteryx-xml <module>.yang
+```
+
+*From YANG to C header file format*
+
+```shell
+pyang --plugindir . -f cpaths <module>.yang
 ```
 
 *From Apteryx-XML to YANG*
