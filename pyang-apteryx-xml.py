@@ -131,6 +131,11 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                                  dest="prefix_default",
                                  default=False,
                                  help="Add a model prefix to the generated XML file."),
+            optparse.make_option("--enum-name",
+                                 action="store_true",
+                                 dest="enum_name",
+                                 default=False,
+                                 help="Use the enum name as the value unless specified"),
             ]
         g = optparser.add_option_group(
             "generate-prefix option")
@@ -158,6 +163,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
             "leaf-list": self.leaf_list,
         }
         self.prefix_default = ctx.opts.prefix_default
+        self.enum_name = ctx.opts.enum_name
         self.ns_uri = {}
         self.model = {}
         self.org = {}
@@ -317,7 +323,10 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                         if val_int is not None:
                             count = val_int
                     else:
-                        value.attrib["value"] = str(count)
+                        if self.enum_name:
+                            value.attrib["value"] = value.attrib["name"]
+                        else:
+                            value.attrib["value"] = str(count)
                     count = count + 1
                     descr = enum.search_one('description')
                     if descr is not None:
