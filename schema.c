@@ -2143,7 +2143,8 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
         }
         else if (child && flags & SCH_F_SET_NULL)
         {
-            if (sch_is_hidden (schema))
+            if (sch_is_hidden (schema) ||
+               (flags & SCH_F_CONFIG && !sch_is_writable (schema)))
             {
                 DEBUG (flags, "Silently ignoring node \"%s\"\n", name);
                 free ((void *)child->children->data);
