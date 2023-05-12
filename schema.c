@@ -2242,13 +2242,15 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
                 if (!rc)
                     goto exit;
             }
-            /* Prune empty branches */
-            if (!child->children)
-            {
-                free (child->data);
-                g_node_destroy (child);
-            }
         }
+    }
+
+    /* Prune empty branches */
+    if (child && !child->children && !sch_is_leaf (schema))
+    {
+        DEBUG (flags, "Throwing away node \"%s\"\n", APTERYX_NAME (child));
+        free ((void *)child->data);
+        g_node_destroy (child);
     }
 
 exit:
