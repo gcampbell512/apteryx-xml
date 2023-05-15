@@ -51,6 +51,20 @@ static __thread char tl_errmsg[BUFSIZ] = {0};
         DEBUG (flags, fmt, ## args); \
     }
 
+typedef struct _sch_xml_to_gnode_parms_s
+{
+    sch_instance *in_instance;
+    int in_flags;
+    char *in_def_op;
+    bool in_is_edit;
+    GNode *out_tree;
+    char *out_error_tag;
+    GList *out_deletes;
+    GList *out_removes;
+    GList *out_creates;
+    GList *out_replaces;
+} _sch_xml_to_gnode_parms;
+
 /* Retrieve the last error code */
 sch_err
 sch_last_err (void)
@@ -1805,7 +1819,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, char *namespace, 
             gnode_sort_children (sch_node_child_first (schema), child);
             for (GNode * field = child->children; field; field = field->next)
             {
-                if (_sch_gnode_to_xml (instance, sch_node_child_first (schema), namespace, 
+                if (_sch_gnode_to_xml (instance, sch_node_child_first (schema), namespace,
                                        data, field, flags, depth + 1))
                 {
                     has_child = true;
@@ -1903,9 +1917,96 @@ xml_node_has_content (xmlNode * xml)
     return ret;
 }
 
+/**
+ * Check XML node for the operation attribute and extract it. Return whether the
+ * operation is recognised or not.
+ */
+static bool
+_operation_ok (_sch_xml_to_gnode_parms *_parms, xmlNode *xml, char *curr_op, char **new_op)
+{
+    char *attr;
+
+    attr = (char *) xmlGetProp (xml, BAD_CAST "operation");
+    if (attr != NULL)
+    {
+        if (!_parms->in_is_edit)
+        {
+            _parms->out_error_tag = "bad-attribute";
+            return false;
+        }
+
+        /* Find new attribute. */
+        if (g_strcmp0 (attr, "delete") == 0)
+        {
+            *new_op = "delete";
+        }
+        else if (g_strcmp0 (attr, "merge") == 0)
+        {
+            *new_op = "merge";
+        }
+        else if (g_strcmp0 (attr, "replace") == 0)
+        {
+            *new_op = "replace";
+        }
+        else if (g_strcmp0 (attr, "create") == 0)
+        {
+            *new_op = "create";
+        }
+        else if (g_strcmp0 (attr, "remove") == 0)
+        {
+            *new_op = "remove";
+        }
+        else
+        {
+            g_free (attr);
+            _parms->out_error_tag = "bad-attribute";
+            return false;
+        }
+        g_free (attr);
+
+        /* Check for invalid transitions between sub-operations. We only allow
+         * merge->anything transitions.
+         */
+        if (g_strcmp0 (curr_op, *new_op) != 0 && g_strcmp0 (curr_op, "merge") != 0)
+        {
+            _parms->out_error_tag = "operation-not-supported";
+            return false;
+        }
+    }
+    return true;
+}
+
+static void
+_perform_actions (_sch_xml_to_gnode_parms *_parms, char *curr_op, char *new_op, char *new_xpath)
+{
+    /* Do nothing if not an edit, or operation not changing. */
+    if (!_parms->in_is_edit || g_strcmp0 (curr_op, new_op) == 0)
+    {
+        return;
+    }
+
+    /* Handle operations. */
+    if (g_strcmp0 (new_op, "delete") == 0)
+    {
+        _parms->out_deletes = g_list_append (_parms->out_deletes, g_strdup (new_xpath));
+    }
+    else if (g_strcmp0 (new_op, "remove") == 0)
+    {
+        _parms->out_removes = g_list_append (_parms->out_removes, g_strdup (new_xpath));
+    }
+    else if (g_strcmp0 (new_op, "create") == 0)
+    {
+        _parms->out_creates = g_list_append (_parms->out_creates, g_strdup (new_xpath));
+    }
+    else if (g_strcmp0 (new_op, "replace") == 0)
+    {
+        _parms->out_replaces = g_list_append (_parms->out_replaces, g_strdup (new_xpath));
+    }
+}
+
 static GNode *
-_sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * namespace, GNode * parent,
-                   xmlNode * xml, int flags, int depth)
+_sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, const char * namespace, char * part_xpath,
+                   char * curr_op, GNode * pparent, xmlNode * xml, int depth)
 {
     char *name = (char *) xml->name;
     xmlNode *child;
@@ -1913,6 +2014,9 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
     GNode *tree = NULL;
     GNode *node = NULL;
     char *key = NULL;
+    char *new_xpath = NULL;
+    char *new_op = curr_op;
+
 
     /* Detect change in namespace */
     if (xml->ns && xml->ns->href)
@@ -1926,14 +2030,14 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
         }
         else if (schema)
         {
-            ns = xmlSearchNsByHref (((xmlNode *)instance)->doc, schema, xml->ns->href);
+            ns = xmlSearchNsByHref (((xmlNode *)_parms->in_instance)->doc, schema, xml->ns->href);
         }
         else
         {
-            child = ((xmlNode *)instance)->children;
+            child = ((xmlNode *)_parms->in_instance)->children;
             while (child)
             {
-                ns = xmlSearchNsByHref (((xmlNode *)instance)->doc, child, xml->ns->href);
+                ns = xmlSearchNsByHref (((xmlNode *)_parms->in_instance)->doc, child, xml->ns->href);
                 if (ns)
                     break;
                 child = child->next;
@@ -1945,12 +2049,13 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
 
     /* Find schema node */
     if (!schema)
-        schema = lookup_node (namespace, instance, name);
+        schema = lookup_node (namespace, _parms->in_instance, name);
     else
         schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
     {
-        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for xml node %s:%s\n", namespace, name);
+        ERROR (_parms->in_flags, SCH_E_NOSCHEMANODE, "No schema match for xml node %s:%s\n", namespace, name);
+        _parms->out_error_tag = "malformed-message";
         return NULL;
     }
 
@@ -1958,23 +2063,38 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
     if (depth == 0 && namespace)
         name = g_strdup_printf ("%s:%s", namespace, (const char *) xml->name);
 
+    /* Update xpath. */
+    new_xpath = g_strdup_printf ("%s/%s", part_xpath, name);
+
+    /* Check operation, error tag set on exit from routine. */
+    if (!_operation_ok (_parms, xml, curr_op, &new_op))
+    {
+        ERROR (_parms->in_flags, SCH_E_INVALIDQUERY, "Invalid operation\n");
+        free (new_xpath);
+        return NULL;
+    }
+
     /* LIST */
     if (sch_is_list (schema))
     {
+        char *old_xpath = new_xpath;
+        char *key_value;
+
         key = sch_name (sch_node_child_first (sch_node_child_first (schema)));
-        DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        DEBUG (_parms->in_flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         depth++;
         tree = node = APTERYX_NODE (NULL, g_strdup (name));
         attr = (char *) xmlGetProp (xml, BAD_CAST key);
         if (attr)
         {
             node = APTERYX_NODE (node, attr);
-            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
-            if (!(flags & SCH_F_STRIP_KEY) || xmlFirstElementChild (xml))
+            DEBUG (_parms->in_flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            if (!(_parms->in_flags & SCH_F_STRIP_KEY) || xmlFirstElementChild (xml))
             {
                 APTERYX_NODE (node, g_strdup (key));
-                DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", key);
+                DEBUG (_parms->in_flags, "%*s%s\n", (depth + 1) * 2, " ", key);
             }
+            key_value = attr;
         }
         else if (xmlFirstElementChild (xml) &&
                  g_strcmp0 ((const char *) xmlFirstElementChild (xml)->name, key) == 0 &&
@@ -1983,48 +2103,52 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
             node =
                 APTERYX_NODE (node,
                               (char *) xmlNodeGetContent (xmlFirstElementChild (xml)));
-            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            DEBUG (_parms->in_flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            key_value = (char *) xmlNodeGetContent (xmlFirstElementChild (xml));
         }
         else
         {
             node = APTERYX_NODE (node, g_strdup ("*"));
-            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            DEBUG (_parms->in_flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+            key_value = g_strdup ("*");
         }
         schema = sch_node_child_first (schema);
+        new_xpath = g_strdup_printf ("%s/%s", old_xpath, key_value);
+        g_free (old_xpath);
+        g_free (key_value);
     }
     /* CONTAINER */
     else if (!sch_is_leaf (schema))
     {
-        DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        DEBUG (_parms->in_flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         tree = node = APTERYX_NODE (NULL, g_strdup_printf ("%s%s", depth ? "" : "/", name));
     }
     /* LEAF */
     else
     {
-        tree = node = APTERYX_NODE (NULL, g_strdup (name));
-        attr = (char *) xmlGetProp (xml, BAD_CAST "operation");
-        if (g_strcmp0 (attr, "delete") == 0)
+        if (g_strcmp0 (new_op, "delete") != 0 && g_strcmp0 (new_op, "remove") != 0)
         {
-            node = APTERYX_NODE (tree, g_strdup (""));
-            DEBUG (flags, "%*s%s = NULL\n", depth * 2, " ", name);
+            tree = node = APTERYX_NODE (NULL, g_strdup (name));
+            if (xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA))
+            {
+                char *value = (char *) xmlNodeGetContent (xml);
+                value = sch_translate_from (schema, value);
+                node = APTERYX_NODE (tree, value);
+                DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+            }
+            else
+            {
+                DEBUG (_parms->in_flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+            }
         }
-        else if (xml_node_has_content (xml) && !(flags & SCH_F_STRIP_DATA))
-        {
-            char *value = (char *) xmlNodeGetContent (xml);
-            value = sch_translate_from (schema, value);
-            node = APTERYX_NODE (tree, value);
-            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
-        }
-        else
-        {
-            DEBUG (flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
-        }
-        free (attr);
     }
+
+    /* Carry out actions for this operation. Does nothing if not edit-config. */
+    _perform_actions (_parms, curr_op, new_op, new_xpath);
 
     for (child = xmlFirstElementChild (xml); child; child = xmlNextElementSibling (child))
     {
-        if ((flags & SCH_F_STRIP_KEY) && key &&
+        if ((_parms->in_flags & SCH_F_STRIP_KEY) && key &&
             g_strcmp0 ((const char *) child->name, key) == 0)
         {
             /* The only child is the key with value */
@@ -2034,13 +2158,13 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
                 {
                     /* Want all parameters for one entry in list. */
                     APTERYX_NODE (node, g_strdup ("*"));
-                    DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
+                    DEBUG (_parms->in_flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
                 }
                 else
                 {
                     /* Want one field in list element for one or more entries */
                     APTERYX_NODE (node, g_strdup ((const char *) child->name));
-                    DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", child->name);
+                    DEBUG (_parms->in_flags, "%*s%s\n", (depth + 1) * 2, " ", child->name);
                 }
                 break;
             }
@@ -2048,16 +2172,17 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
             else if (xmlChildElementCount (xml) > 1)
             {
                 APTERYX_NODE (node, g_strdup ((const char *) child->name));
-                DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+                DEBUG (_parms->in_flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
             }
         }
         else
         {
-            GNode *cn = _sch_xml_to_gnode (instance, schema, namespace, NULL, child, flags, depth + 1);
-            if (!cn)
+            GNode *cn = _sch_xml_to_gnode (_parms, schema, namespace, new_xpath, new_op, NULL, child, depth + 1);
+            if (_parms->out_error_tag)
             {
                 apteryx_free_tree (tree);
                 tree = NULL;
+                ERROR (_parms->in_flags, SCH_E_INVALIDQUERY, "recursive call failed: depth=%d\n", depth);
                 goto exit;
             }
             g_node_append (node, cn);
@@ -2069,21 +2194,135 @@ _sch_xml_to_gnode (sch_instance * instance, sch_node * schema, const char * name
         g_strcmp0 (APTERYX_NAME (node), "*") != 0)
     {
         APTERYX_NODE (node, g_strdup ("*"));
-        DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
+        DEBUG (_parms->in_flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
     }
 
 exit:
     if (depth == 0 && namespace)
         free (name);
     free (key);
+    if (!tree)
+    {
+        ERROR (_parms->in_flags, SCH_E_INVALIDQUERY, "returning NULL: xpath=%s\n", new_xpath);
+    }
+    g_free (new_xpath);
     return tree;
 }
 
-GNode *
-sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags)
+static _sch_xml_to_gnode_parms *
+sch_parms_init (sch_instance * instance, int flags, char * def_op, bool is_edit)
 {
+    _sch_xml_to_gnode_parms *_parms = g_malloc (sizeof (*_parms));
+    _parms->in_instance = instance;
+    _parms->in_flags = flags;
+    _parms->in_def_op = def_op;
+    _parms->in_is_edit = is_edit;
+    _parms->out_tree = NULL;
+    _parms->out_error_tag = NULL;
+    _parms->out_deletes = NULL;
+    _parms->out_removes = NULL;
+    _parms->out_creates = NULL;
+    _parms->out_replaces = NULL;
+    return _parms;
+}
+
+GNode *
+sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags, char * def_op, bool is_edit)
+{
+    _sch_xml_to_gnode_parms *_parms = sch_parms_init(instance, flags, def_op, is_edit);
     tl_error = SCH_E_SUCCESS;
-    return _sch_xml_to_gnode (instance, schema, NULL, NULL, xml, flags, 0);
+    _parms->out_tree = _sch_xml_to_gnode (_parms, schema, NULL, "", def_op, NULL, xml, 0);
+    return (sch_xml_to_gnode_parms) _parms;
+}
+
+GNode *
+sch_parm_tree (sch_xml_to_gnode_parms parms)
+{
+    _sch_xml_to_gnode_parms *_parms = parms;
+    GNode *ret;
+
+    if (!_parms)
+    {
+        return NULL;
+    }
+    ret = _parms->out_tree;
+    _parms->out_tree = NULL;
+    return ret;
+}
+
+char *
+sch_parm_error_tag (sch_xml_to_gnode_parms parms)
+{
+    _sch_xml_to_gnode_parms *_parms = parms;
+
+    if (!_parms)
+    {
+        return NULL;
+    }
+    return _parms->out_error_tag;
+}
+
+GList *
+sch_parm_deletes (sch_xml_to_gnode_parms parms)
+{
+    _sch_xml_to_gnode_parms *_parms = parms;
+
+    if (!_parms)
+    {
+        return NULL;
+    }
+    return _parms->out_deletes;
+}
+
+GList *
+sch_parm_removes (sch_xml_to_gnode_parms parms)
+{
+    _sch_xml_to_gnode_parms *_parms = parms;
+
+    if (!_parms)
+    {
+        return NULL;
+    }
+    return _parms->out_removes;
+}
+
+GList *
+sch_parm_creates (sch_xml_to_gnode_parms parms)
+{
+    _sch_xml_to_gnode_parms *_parms = parms;
+
+    if (!_parms)
+    {
+        return NULL;
+    }
+    return _parms->out_creates;
+}
+
+GList *
+sch_parm_replaces (sch_xml_to_gnode_parms parms)
+{
+    _sch_xml_to_gnode_parms *_parms = parms;
+
+    if (!_parms)
+    {
+        return NULL;
+    }
+    return _parms->out_replaces;
+}
+
+void
+sch_parm_free (sch_xml_to_gnode_parms parms)
+{
+    _sch_xml_to_gnode_parms *_parms = parms;
+
+    if (_parms)
+    {
+        g_list_free_full (_parms->out_deletes, g_free);
+        g_list_free_full (_parms->out_removes, g_free);
+        g_list_free_full (_parms->out_creates, g_free);
+        g_list_free_full (_parms->out_replaces, g_free);
+        g_free (_parms);
+    }
 }
 
 static char *
