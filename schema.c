@@ -1528,11 +1528,6 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, char *namespac
             ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s:%s\n", namespace, name);
             goto exit;
         }
-        if (!sch_is_readable (schema))
-        {
-            ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
-            goto exit;
-        }
 
         /* Create node */
         if (depth == 0)
@@ -1630,7 +1625,12 @@ sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path,
     /* Parse the path first */
     tl_error = SCH_E_SUCCESS;
     root = _sch_path_to_gnode (instance, &schema, NULL, path, flags, 0);
-    if (!root)
+    if (!root || !schema)
+    {
+        free (_path);
+        return NULL;
+    }
+    if (sch_is_leaf (schema) && !sch_is_readable (schema))
     {
         free (_path);
         return NULL;
