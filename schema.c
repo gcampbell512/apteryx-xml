@@ -433,11 +433,9 @@ sch_load (const char *path)
         char *ext = strrchr(filename, '.');
         if (g_strcmp0 (ext, ".map") == 0)
         {
-            DEBUG (SCH_F_DEBUG, "Loading mappings from \"%s\"\n", filename);
             sch_load_namespace_mappings (instance, filename);
             continue;
         }
-        DEBUG (SCH_F_DEBUG, "Loading model from \"%s\"\n", filename);
         xmlDoc *doc_new = xmlParseFile (filename);
         if (doc_new == NULL)
         {
