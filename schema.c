@@ -86,9 +86,9 @@ sch_last_errmsg (void)
     return tl_errmsg;
 }
 
-/* List full paths for all XML files in the search path */
+/* List full paths for all schema files in the search path */
 static void
-list_xml_files (GList ** files, const char *path)
+list_schema_files (GList ** files, const char *path)
 {
     DIR *dp;
     struct dirent *ep;
@@ -105,16 +105,18 @@ list_xml_files (GList ** files, const char *path)
         {
             while ((ep = readdir (dp)))
             {
-                char *filename = NULL;
+                char *filename;
                 if ((fnmatch ("*.xml", ep->d_name, FNM_PATHNAME) != 0) &&
-                    (fnmatch ("*.xml.gz", ep->d_name, FNM_PATHNAME) != 0))
+                    (fnmatch ("*.xml.gz", ep->d_name, FNM_PATHNAME) != 0) &&
+                    (fnmatch ("*.map", ep->d_name, FNM_PATHNAME) != 0))
                 {
                     continue;
                 }
-                if (asprintf (&filename, "%s/%s", dpath, ep->d_name) > 0)
-                {
-                    *files = g_list_append (*files, filename);
-                }
+                if (dpath[strlen (dpath) - 1] == '/')
+                    filename = g_strdup_printf ("%s%s", dpath, ep->d_name);
+                else
+                    filename = g_strdup_printf ("%s/%s", dpath, ep->d_name);
+                *files = g_list_append (*files, filename);
             }
             (void) closedir (dp);
         }
@@ -353,9 +355,8 @@ assign_ns_to_root (xmlDoc *doc, xmlNode *node)
  }
 
 static void
-sch_load_namespace_mappings (sch_instance *instance, const char *path, const char *fname)
+sch_load_namespace_mappings (sch_instance *instance, const char *filename)
 {
-    char *mapping_file_name = g_strdup_printf ("%s/%s", path, fname);
     FILE *fp = NULL;
     gchar **ns_names;
     char buf[256];
@@ -363,7 +364,7 @@ sch_load_namespace_mappings (sch_instance *instance, const char *path, const cha
     if (!instance)
         return;
 
-    fp = fopen (mapping_file_name, "r");
+    fp = fopen (filename, "r");
     if (fp)
     {
         instance->map_hash_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
@@ -402,7 +403,6 @@ sch_load_namespace_mappings (sch_instance *instance, const char *path, const cha
         }
         fclose (fp);
     }
-    g_free (mapping_file_name);
 }
 
 /* Parse all XML files in the search path and merge trees */
@@ -426,10 +426,18 @@ sch_load (const char *path)
         (const xmlChar *) "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd");
     xmlDocSetRootElement (instance->doc, module);
 
-    list_xml_files (&files, path);
+    list_schema_files (&files, path);
     for (iter = files; iter; iter = g_list_next (iter))
     {
         char *filename = (char *) iter->data;
+        char *ext = strrchr(filename, '.');
+        if (g_strcmp0 (ext, ".map") == 0)
+        {
+            DEBUG (SCH_F_DEBUG, "Loading mappings from \"%s\"\n", filename);
+            sch_load_namespace_mappings (instance, filename);
+            continue;
+        }
+        DEBUG (SCH_F_DEBUG, "Loading model from \"%s\"\n", filename);
         xmlDoc *doc_new = xmlParseFile (filename);
         if (doc_new == NULL)
         {
@@ -445,9 +453,6 @@ sch_load (const char *path)
         assign_ns_to_root (instance->doc, module->children);
     }
     g_list_free_full (files, free);
-
-    /* Load namespace mapping file if it exists */
-    sch_load_namespace_mappings (instance, path, "namespace.mappings");
 
     /* Store a link back to the instance in the xmlDoc stucture */
     instance->doc->_private = (void *) instance;
