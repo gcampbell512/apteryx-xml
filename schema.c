@@ -55,6 +55,7 @@ typedef struct _sch_instance
 {
     xmlDoc *doc;
     GList *models_list;
+    GHashTable *map_hash_table;
 } sch_instance;
 
 typedef struct _sch_xml_to_gnode_parms_s
@@ -351,6 +352,59 @@ assign_ns_to_root (xmlDoc *doc, xmlNode *node)
      }
  }
 
+static void
+sch_load_namespace_mappings (sch_instance *instance, const char *path, const char *fname)
+{
+    char *mapping_file_name = g_strdup_printf ("%s/%s", path, fname);
+    FILE *fp = NULL;
+    gchar **ns_names;
+    char buf[256];
+
+    if (!instance)
+        return;
+
+    fp = fopen (mapping_file_name, "r");
+    if (fp)
+    {
+        instance->map_hash_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+
+        while (fgets (buf, sizeof (buf), fp) != NULL)
+        {
+            /* Skip comment lines */
+            if (buf[0] == '#')
+                continue;
+
+            /* Remove any trailing LF */
+            buf[strcspn(buf, "\n")] = '\0';
+
+            ns_names = g_strsplit (buf, " ", 2);
+            if (ns_names[0] && ns_names[1])
+            {
+                void *old_key;
+                void *old_value;
+
+                /* Look up this node name to check for duplicates. */
+                if (g_hash_table_lookup_extended (instance->map_hash_table, ns_names[0],
+                                                  &old_key, &old_value))
+                {
+                    g_hash_table_insert (instance->map_hash_table, g_strdup (ns_names[0]),
+                                         g_strdup (ns_names[1]));
+                    g_free (old_key);
+                    g_free (old_value);
+                }
+                else
+                {
+                    g_hash_table_insert (instance->map_hash_table, g_strdup (ns_names[0]),
+                                         g_strdup (ns_names[1]));
+                }
+            }
+            g_strfreev (ns_names);
+        }
+        fclose (fp);
+    }
+    g_free (mapping_file_name);
+}
+
 /* Parse all XML files in the search path and merge trees */
 sch_instance *
 sch_load (const char *path)
@@ -366,7 +420,6 @@ sch_load (const char *path)
     /* Create a new doc and root node for the merged MODULE */
     instance->doc = xmlNewDoc ((xmlChar *) "1.0");
     module = xmlNewNode (NULL, (xmlChar *) "MODULE");
-    // TODO configurable default namespace
     xmlNewNs (module, (const xmlChar *) "https://github.com/alliedtelesis/apteryx", NULL);
     xmlNewNs (module, (const xmlChar *) "http://www.w3.org/2001/XMLSchema-instance", (const xmlChar *) "xsi");
     xmlNewProp (module, (const xmlChar *) "xsi:schemaLocation",
@@ -392,6 +445,12 @@ sch_load (const char *path)
         assign_ns_to_root (instance->doc, module->children);
     }
     g_list_free_full (files, free);
+
+    /* Load namespace mapping file if it exists */
+    sch_load_namespace_mappings (instance, path, "namespace.mappings");
+
+    /* Store a link back to the instance in the xmlDoc stucture */
+    instance->doc->_private = (void *) instance;
 
     return instance;
 }
@@ -443,6 +502,8 @@ sch_free (sch_instance * instance)
             sch_free_loaded_models (instance->models_list);
         if (instance->doc)
             xmlFreeDoc (instance->doc);
+        if (instance->map_hash_table)
+            g_hash_table_destroy (instance->map_hash_table);
         g_free (instance);
     }
 }
@@ -531,13 +592,26 @@ sch_dump_xml (sch_instance * instance)
     return (char *) xmlbuf;
 }
 
-bool
+static bool
+sch_ns_native (sch_instance *instance, xmlNs *ns)
+{
+    if (instance && instance->map_hash_table)
+    {
+        if (g_hash_table_lookup (instance->map_hash_table, (const char *) ns->href))
+            return false;
+    }
+    return true;
+}
+
+static bool
 sch_ns_match (xmlNode *node, xmlNs *ns)
 {
-    /* Check for default namespace match */
-    if (!ns)
+    sch_instance *instance = node ? node->doc->_private : NULL;
+
+    /* Check for native namespace match */
+    if (node && !ns)
     {
-        if (!node->ns || !node->ns->prefix)
+        if (sch_ns_native (instance, node->ns))
             return TRUE;
         return FALSE;
     }
@@ -556,7 +630,7 @@ sch_ns_match (xmlNode *node, xmlNs *ns)
 }
 
 static xmlNs *
-lookup_ns (sch_instance * instance, xmlNode *schema, const char *name, int flags, bool href)
+sch_lookup_ns (sch_instance * instance, xmlNode *schema, const char *name, int flags, bool href)
 {
     xmlNs *ns = NULL;
     xmlNode *xml;
@@ -1525,7 +1599,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         if (colon)
         {
             colon[0] = '\0';
-            ns = lookup_ns (instance, schema, name, flags, false);
+            ns = sch_lookup_ns (instance, schema, name, flags, false);
             if (!ns)
             {
                 ERROR (flags, SCH_E_NOSCHEMANODE, "No namespace found \"%s\"\n", name);
@@ -1574,8 +1648,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         /* Create node */
         if (depth == 0)
         {
-            // TODO lookup g_hash_table_lookup
-            if (ns && ns->prefix && g_strcmp0 ((const char *) ns->href, "https://github.com/alliedtelesis/apteryx") != 0)
+            if (ns && ns->prefix && !sch_ns_native (instance, ns))
             {
                 rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s:%s", ns->prefix, name));
             }
@@ -1812,7 +1885,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
     if (colon)
     {
         colon[0] = '\0';
-        ns = lookup_ns (instance, schema, name, flags, false);
+        ns = sch_lookup_ns (instance, schema, name, flags, false);
         if (!ns)
         {
             ERROR (flags, SCH_E_NOSCHEMANODE, "No namespace found \"%s\"\n", name);
@@ -2059,7 +2132,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
 
     /* Detect change in namespace */
     if (xml->ns && xml->ns->href)
-        ns = lookup_ns (instance, schema, (const char *) xml->ns->href, flags, true);
+        ns = sch_lookup_ns (instance, schema, (const char *) xml->ns->href, flags, true);
 
     /* Find schema node */
     if (!schema)
@@ -2074,9 +2147,10 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     }
 
     /* Prepend non default namespaces to root nodes */
-    // TODO lookup g_hash_table_lookup
-    if (depth == 0 && ns && ns->prefix && g_strcmp0 ((const char *) ns->href, "https://github.com/alliedtelesis/apteryx") != 0)
+    if (depth == 0 && ns && ns->prefix && !sch_ns_native (instance, ns))
         name = g_strdup_printf ("%s:%s", ns->prefix, (const char *) xml->name);
+    else
+        name = g_strdup ((char *) xml->name);
 
     /* Update xpath. */
     new_xpath = g_strdup_printf ("%s/%s", part_xpath, name);
@@ -2086,6 +2160,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     {
         ERROR (_parms->in_flags, SCH_E_INVALIDQUERY, "Invalid operation\n");
         free (new_xpath);
+        free (name);
         return NULL;
     }
 
@@ -2213,8 +2288,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     }
 
 exit:
-    if (depth == 0 && ns)
-        free (name);
+    free (name);
     free (key);
     if (!tree)
     {
@@ -2558,7 +2632,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     if (colon)
     {
         colon[0] = '\0';
-        ns = lookup_ns (instance, schema, name, flags, false);
+        ns = sch_lookup_ns (instance, schema, name, flags, false);
         if (!ns)
         {
             ERROR (flags, SCH_E_NOSCHEMANODE, "No namespace found \"%s\"\n", name);
@@ -2716,7 +2790,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
     if (colon)
     {
         char *namespace = g_strndup (name, colon - name);
-        ns = lookup_ns (instance, schema, namespace, flags, false);
+        ns = sch_lookup_ns (instance, schema, namespace, flags, false);
         free (namespace);
         name = colon + 1;
     }
