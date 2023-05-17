@@ -49,11 +49,12 @@ typedef void * sch_xml_to_gnode_parms;
 typedef struct _sch_instance sch_instance;
 typedef void sch_node;
 sch_instance *sch_load (const char *path);
-void sch_free (sch_instance * schema);
-sch_node *sch_lookup (sch_instance * schema, const char *path);
-char *sch_dump_xml (sch_instance * schema);
-GList *sch_get_loaded_models (sch_instance * schema);
+void sch_free (sch_instance * instance);
+sch_node *sch_lookup (sch_instance * instance, const char *path);
+char *sch_dump_xml (sch_instance * instance);
+GList *sch_get_loaded_models (sch_instance * instance);
 
+sch_node *sch_child_first (sch_instance *instance);
 sch_node *sch_node_parent (sch_node *node);
 sch_node *sch_node_child (sch_node *parent, const char *name);
 sch_node *sch_node_child_first (sch_node * parent);

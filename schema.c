@@ -778,6 +778,12 @@ _sch_node_child (xmlNs *ns, sch_node * parent, const char *child)
 }
 
 sch_node *
+sch_child_first (sch_instance * instance)
+{
+    return instance ? sch_node_child_first (xmlDocGetRootElement (instance->doc)) : NULL;
+}
+
+sch_node *
 sch_node_parent (sch_node *node)
 {
     xmlNode *xml = (xmlNode *) node;
