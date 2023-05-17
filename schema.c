@@ -274,11 +274,11 @@ add_module_info_to_child (sch_instance *instance, xmlNode *module)
         {
             if (module->ns->href)
             {
-                loaded->ns = g_strdup ((char *) module->ns->href);
+                loaded->ns_href = g_strdup ((char *) module->ns->href);
             }
             if (module->ns->prefix)
             {
-                loaded->prefix = g_strdup ((char *) module->ns->prefix);
+                loaded->ns_prefix = g_strdup ((char *) module->ns->prefix);
             }
         }
         if (mod)
@@ -315,7 +315,7 @@ copy_nsdef_to_root (xmlDoc *doc, xmlNode *node)
         xmlNsPtr ns = n->nsDef;
         while (ns)
         {
-            if (ns->prefix && !xmlSearchNsByHref (doc, xmlDocGetRootElement (doc), ns->href))
+            if (ns->prefix && ns->href && !xmlSearchNsByHref (doc, xmlDocGetRootElement (doc), ns->href))
             {
                 xmlNewNs (xmlDocGetRootElement (doc), ns->href, ns->prefix);
             }
@@ -335,9 +335,8 @@ assign_ns_to_root (xmlDoc *doc, xmlNode *node)
     while (n)
     {
         /* Assign this nodes ns to the new root if needed */
-        if (n->ns) {
+        if (n->ns)
             n->ns = xmlSearchNsByHref (doc, xmlDocGetRootElement (doc), n->ns->href);
-        }
 
         /* Recurse */
         assign_ns_to_root (doc, n->children);
@@ -408,9 +407,9 @@ sch_free_loaded_models (GList *loaded_models)
         for (list = g_list_first (loaded_models); list; list = g_list_next (list))
         {
             loaded = list->data;
-            if (loaded->ns)
+            if (loaded->ns_href)
             {
-                g_free (loaded->ns);
+                g_free (loaded->ns_href);
             }
             if (loaded->model)
             {
@@ -420,9 +419,9 @@ sch_free_loaded_models (GList *loaded_models)
             {
                 g_free (loaded->organization);
             }
-            if (loaded->prefix)
+            if (loaded->ns_prefix)
             {
-                g_free (loaded->prefix);
+                g_free (loaded->ns_prefix);
             }
             if (loaded->version)
             {
@@ -438,9 +437,14 @@ sch_free_loaded_models (GList *loaded_models)
 void
 sch_free (sch_instance * instance)
 {
-    sch_free_loaded_models (instance->models_list);
-    xmlFreeDoc (instance->doc);
-    g_free (instance);
+    if (instance)
+    {
+        if (instance->models_list)
+            sch_free_loaded_models (instance->models_list);
+        if (instance->doc)
+            xmlFreeDoc (instance->doc);
+        g_free (instance);
+    }
 }
 
 GList *

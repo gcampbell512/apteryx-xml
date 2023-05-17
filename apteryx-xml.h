@@ -36,10 +36,10 @@ const char * sch_last_errmsg (void);
 
 typedef struct _sch_loaded_model
 {
-    char *ns;
+    char *ns_href;
+    char *ns_prefix;
     char *model;
     char *organization;
-    char *prefix;
     char *version;
 } sch_loaded_model;
 
