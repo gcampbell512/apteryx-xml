@@ -46,7 +46,7 @@ typedef struct _sch_loaded_model
 typedef void * sch_xml_to_gnode_parms;
 
 /* Schema */
-typedef void sch_instance;
+typedef struct _sch_instance sch_instance;
 typedef void sch_node;
 sch_instance *sch_load (const char *path);
 void sch_free (sch_instance * schema);

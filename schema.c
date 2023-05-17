@@ -51,6 +51,12 @@ static __thread char tl_errmsg[BUFSIZ] = {0};
         DEBUG (flags, fmt, ## args); \
     }
 
+typedef struct _sch_instance
+{
+    xmlDoc *doc;
+    GList *models_list;
+} sch_instance;
+
 typedef struct _sch_xml_to_gnode_parms_s
 {
     sch_instance *in_instance;
@@ -253,7 +259,7 @@ add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *
 }
 
 static void
-add_module_info_to_child (xmlDoc *doc, xmlNode *module)
+add_module_info_to_child (sch_instance *instance, xmlNode *module)
 {
     sch_loaded_model *loaded;
     xmlChar *mod = xmlGetProp (module, (xmlChar *)"model");
@@ -287,7 +293,7 @@ add_module_info_to_child (xmlDoc *doc, xmlNode *module)
         {
             loaded->version = g_strdup ((char *) ver);
         }
-        doc->_private = (void *) g_list_append ((GList *) doc->_private, loaded);
+        instance->models_list = (void *) g_list_append (instance->models_list, loaded);
     }
 
     add_module_info_to_children (module->children, def, mod, org, ver);
@@ -350,20 +356,23 @@ assign_ns_to_root (xmlDoc *doc, xmlNode *node)
 sch_instance *
 sch_load (const char *path)
 {
-    xmlDoc *doc;
+    sch_instance *instance;
     xmlNode *module;
     GList *files = NULL;
     GList *iter;
 
+    /* New instance */
+    instance = g_malloc0 (sizeof (sch_instance));
+
     /* Create a new doc and root node for the merged MODULE */
-    doc = xmlNewDoc ((xmlChar *) "1.0");
+    instance->doc = xmlNewDoc ((xmlChar *) "1.0");
     module = xmlNewNode (NULL, (xmlChar *) "MODULE");
     // TODO configurable default namespace
     xmlNewNs (module, (const xmlChar *) "https://github.com/alliedtelesis/apteryx", NULL);
     xmlNewNs (module, (const xmlChar *) "http://www.w3.org/2001/XMLSchema-instance", (const xmlChar *) "xsi");
     xmlNewProp (module, (const xmlChar *) "xsi:schemaLocation",
         (const xmlChar *) "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd");
-    xmlDocSetRootElement (doc, module);
+    xmlDocSetRootElement (instance->doc, module);
 
     list_xml_files (&files, path);
     for (iter = files; iter; iter = g_list_next (iter))
@@ -377,15 +386,15 @@ sch_load (const char *path)
         }
         xmlNode *module_new = xmlDocGetRootElement (doc_new);
         cleanup_nodes (module_new);
-        copy_nsdef_to_root (doc, module_new);
-        add_module_info_to_child (doc, module_new);
+        copy_nsdef_to_root (instance->doc, module_new);
+        add_module_info_to_child (instance, module_new);
         merge_nodes (module, module->children, module_new->children, 0);
         xmlFreeDoc (doc_new);
-        assign_ns_to_root (doc, module->children);
+        assign_ns_to_root (instance->doc, module->children);
     }
     g_list_free_full (files, free);
 
-    return (sch_instance *) xmlDocGetRootElement (doc);
+    return instance;
 }
 
 static void
@@ -427,18 +436,17 @@ sch_free_loaded_models (GList *loaded_models)
 }
 
 void
-sch_free (sch_instance * schema)
+sch_free (sch_instance * instance)
 {
-    xmlNode *xml = (xmlNode *) schema;
-    sch_free_loaded_models (xml->doc->_private);
-    xmlFreeDoc (xml->doc);
+    sch_free_loaded_models (instance->models_list);
+    xmlFreeDoc (instance->doc);
+    g_free (instance);
 }
 
 GList *
-sch_get_loaded_models (sch_instance * schema)
+sch_get_loaded_models (sch_instance * instance)
 {
-    xmlNode *xml = (xmlNode *) schema;
-    return (GList *) xml->doc->_private;
+    return instance->models_list;
 }
 
 static gboolean
@@ -506,9 +514,9 @@ remove_hidden_children (xmlNode *node)
 }
 
 char *
-sch_dump_xml (sch_instance * schema)
+sch_dump_xml (sch_instance * instance)
 {
-    xmlNode *xml = (xmlNode *) schema;
+    xmlNode *xml = xmlDocGetRootElement (instance->doc);
     xmlChar *xmlbuf = NULL;
     int bufsize;
 
@@ -621,9 +629,9 @@ lookup_node (const char *namespace, xmlNode * node, const char *path)
 }
 
 sch_node *
-sch_lookup (sch_instance * schema, const char *path)
+sch_lookup (sch_instance * instance, const char *path)
 {
-    return lookup_node (NULL, (xmlNode *) schema, path);
+    return lookup_node (NULL, xmlDocGetRootElement (instance->doc), path);
 }
 
 static sch_node *
@@ -1434,7 +1442,7 @@ exit:
 bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags)
 {
     int _flags = flags;
-    bool rc = _sch_query_to_gnode (parent, schema ?: instance, (char *) query, &_flags, 0);
+    bool rc = _sch_query_to_gnode (parent, schema ?: xmlDocGetRootElement (instance->doc), (char *) query, &_flags, 0);
     if (rflags)
         *rflags = _flags;
     return rc;
@@ -1472,7 +1480,7 @@ convert_model_to_prefix (xmlNode *node, char *ns)
 static GNode *
 _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, char *namespace, const char *path, int flags, int depth)
 {
-    sch_node *schema = rschema && *rschema ? *rschema : instance;
+    sch_node *schema = rschema && *rschema ? *rschema : xmlDocGetRootElement (instance->doc);
     const char *next = NULL;
     GNode *node = NULL;
     GNode *rnode = NULL;
@@ -1534,7 +1542,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, char *namespac
 
         /* Find schema node */
         if (!schema || sch_is_proxy (schema))
-            schema = lookup_node ((const char *)namespace, instance, name);
+            schema = lookup_node ((const char *)namespace, xmlDocGetRootElement (instance->doc), name);
         else
             schema = _sch_node_child (namespace, schema, name);
         if (schema == NULL)
@@ -1790,7 +1798,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, char *namespace, 
 
     /* Find schema node */
     if (!schema)
-        schema = lookup_node (namespace, instance, name);
+        schema = lookup_node (namespace, xmlDocGetRootElement (instance->doc), name);
     else
         schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
@@ -2008,6 +2016,7 @@ static GNode *
 _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, const char * namespace, char * part_xpath,
                    char * curr_op, GNode * pparent, xmlNode * xml, int depth)
 {
+    sch_instance *instance = _parms->in_instance;
     char *name = (char *) xml->name;
     xmlNode *child;
     char *attr;
@@ -2030,14 +2039,14 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, const cha
         }
         else if (schema)
         {
-            ns = xmlSearchNsByHref (((xmlNode *)_parms->in_instance)->doc, schema, xml->ns->href);
+            ns = xmlSearchNsByHref (instance->doc, schema, xml->ns->href);
         }
         else
         {
-            child = ((xmlNode *)_parms->in_instance)->children;
+            child = xmlDocGetRootElement (instance->doc)->children;
             while (child)
             {
-                ns = xmlSearchNsByHref (((xmlNode *)_parms->in_instance)->doc, child, xml->ns->href);
+                ns = xmlSearchNsByHref (instance->doc, child, xml->ns->href);
                 if (ns)
                     break;
                 child = child->next;
@@ -2049,7 +2058,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, const cha
 
     /* Find schema node */
     if (!schema)
-        schema = lookup_node (namespace, _parms->in_instance, name);
+        schema = lookup_node (namespace, xmlDocGetRootElement (instance->doc), name);
     else
         schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
@@ -2501,7 +2510,7 @@ bool
 sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
     bool rc;
-    schema = schema ?: instance;
+    schema = schema ?: xmlDocGetRootElement (instance->doc);
     if (sch_is_leaf (schema))
     {
         rc = _sch_traverse_nodes (schema, node->parent, flags);
@@ -2549,7 +2558,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, char *namespace,
 
     /* Find schema node */
     if (!schema)
-        schema = lookup_node (namespace, instance, name);
+        schema = lookup_node (namespace, xmlDocGetRootElement (instance->doc), name);
     else
         schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
@@ -2700,7 +2709,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, char *namespace,
 
     /* Find schema node */
     if (!schema)
-        schema = lookup_node (namespace, instance, name);
+        schema = lookup_node (namespace, xmlDocGetRootElement (instance->doc), name);
     else
         schema = _sch_node_child (namespace, schema, name);
     if (schema == NULL)
