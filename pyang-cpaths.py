@@ -123,7 +123,7 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
             for enum in type.substmts:
                 val = enum.search_one('value')
                 if val is not None:
-                    fd.write('#define ' + define + '_' + enum.arg.upper() + ' ' + str(val.arg) + '\n')
+                    fd.write('#define ' + define + '_' + enum.arg.replace('-', '_').upper() + ' ' + str(val.arg) + '\n')
                     try:
                         val_int = int(val.arg)
                     except:
@@ -131,7 +131,7 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
                     if val_int is not None:
                         count = val_int
                 else:
-                    fd.write('#define ' + define + '_' + enum.arg.upper() + ' ' + str(count) + '\n')
+                    fd.write('#define ' + define + '_' + enum.arg.replace('-', '_').upper() + ' ' + str(count) + '\n')
                 count = count + 1
 
     # Default value
