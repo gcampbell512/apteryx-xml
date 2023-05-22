@@ -1184,13 +1184,15 @@ _sch_validate_pattern (sch_node * node, const char *value, int flags)
         char message[100];
         regex_t regex_obj;
         int rc;
+        char *d_pattern = g_strdup_printf ("^%s$", pattern);;
 
-        rc = regcomp (&regex_obj, pattern, REG_EXTENDED);
+        rc = regcomp (&regex_obj, d_pattern, REG_EXTENDED);
         if (rc != 0)
         {
             regerror (rc, NULL, message, sizeof (message));
             ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex %s", rc, message, pattern);
             xmlFree (pattern);
+            g_free (d_pattern);
             return false;
         }
 
@@ -1201,10 +1203,12 @@ _sch_validate_pattern (sch_node * node, const char *value, int flags)
             regerror (rc, NULL, message, sizeof (message));
             ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex %s", rc, message, pattern);
             xmlFree (pattern);
+            g_free (d_pattern);
             return false;
         }
 
         xmlFree (pattern);
+        g_free (d_pattern);
         return (rc == 0);
     }
     else if (xml->children)
@@ -1874,7 +1878,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
 {
     xmlNode *data = NULL;
     char *colon = NULL;
-    char *name;  
+    char *name;
 
     /* Get the actual node name */
     if (depth == 0 && strlen (APTERYX_NAME (node)) == 1)
@@ -2232,6 +2236,15 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
             {
                 char *value = (char *) xmlNodeGetContent (xml);
                 value = sch_translate_from (schema, value);
+                if (_parms->in_is_edit && !_sch_validate_pattern (schema, value, _parms->in_flags))
+                {
+                    DEBUG (_parms->in_flags, "Invalid value \"%s\" for node \"%s\"\n", value, name);
+                    free (value);
+                    apteryx_free_tree (tree);
+                    _parms->out_error_tag = "bad-attribute";
+                    tree = NULL;
+                    goto exit;
+                }
                 node = APTERYX_NODE (tree, value);
                 DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
             }
