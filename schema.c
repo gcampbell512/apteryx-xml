@@ -711,8 +711,8 @@ lookup_node (sch_instance *instance, xmlNs *ns, xmlNode *node, const char *path)
     if (colon)
     {
         colon[0] = '\0';
-        ns = sch_lookup_ns (instance, node, key, 0/*flags*/, false);
-        if (!ns)
+        xmlNs *nns = sch_lookup_ns (instance, node, key, 0/*flags*/, false);
+        if (!nns)
         {
             /* No namespace found assume the node is supposed to have a colon in it */
             colon[0] = ':';
@@ -723,6 +723,7 @@ lookup_node (sch_instance *instance, xmlNs *ns, xmlNode *node, const char *path)
             char *_key = key;
             key = g_strdup (colon + 1);
             free (_key);
+            ns = nns;
         }
     }
 
@@ -1634,8 +1635,8 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         if (colon)
         {
             colon[0] = '\0';
-            ns = sch_lookup_ns (instance, schema, name, flags, false);
-            if (!ns)
+            xmlNs *nns = sch_lookup_ns (instance, schema, name, flags, false);
+            if (!nns)
             {
                 /* No namespace found assume the node is supposed to have a colon in it */
                 colon[0] = ':';
@@ -1646,6 +1647,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
                 char *_name = name;
                 name = g_strdup (colon + 1);
                 free (_name);
+                ns = nns;
             }
         }
         if (query && next && query < next)
@@ -1924,8 +1926,8 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
     if (colon)
     {
         colon[0] = '\0';
-        ns = sch_lookup_ns (instance, schema, name, flags, false);
-        if (!ns)
+        xmlNs *nns = sch_lookup_ns (instance, schema, name, flags, false);
+        if (!nns)
         {
             /* No namespace found assume the node is supposed to have a colon in it */
             colon[0] = ':';
@@ -1936,6 +1938,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
             char *_name = name;
             name = g_strdup (colon + 1);
             free (_name);
+            ns = nns;
         }
     }
 
@@ -2174,7 +2177,11 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
 
     /* Detect change in namespace */
     if (xml->ns && xml->ns->href)
-        ns = sch_lookup_ns (instance, schema, (const char *) xml->ns->href, flags, true);
+    {
+         xmlNs *nns = sch_lookup_ns (instance, schema, (const char *) xml->ns->href, flags, true);
+         if (nns)
+            ns = nns;
+    }
 
     /* Find schema node */
     if (!schema)
@@ -2683,8 +2690,8 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     if (colon)
     {
         colon[0] = '\0';
-        ns = sch_lookup_ns (instance, schema, name, flags, false);
-        if (!ns)
+        xmlNs *nns = sch_lookup_ns (instance, schema, name, flags, false);
+        if (!nns)
         {
             /* No namespace found assume the node is supposed to have a colon in it */
             colon[0] = ':';
@@ -2695,6 +2702,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
             char *_name = name;
             name = g_strdup (colon + 1);
             free (_name);
+            ns = nns;
         }
     }
 
@@ -2844,12 +2852,13 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
     if (colon)
     {
         char *namespace = g_strndup (name, colon - name);
-        ns = sch_lookup_ns (instance, schema, namespace, flags, false);
+        xmlNs *nns = sch_lookup_ns (instance, schema, namespace, flags, false);
         free (namespace);
-        if (ns)
+        if (nns)
         {
              /* We found a namespace. Skip the prefix */
             name = colon + 1;
+            ns = nns;
         }
     }
 
