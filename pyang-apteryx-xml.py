@@ -126,11 +126,6 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
 
     def add_opts(self, optparser):
         optlist = [
-            optparse.make_option("--generate-prefix",
-                                 action="store_true",
-                                 dest="prefix_default",
-                                 default=False,
-                                 help="Add a model prefix to the generated XML file."),
             optparse.make_option("--enum-name",
                                  action="store_true",
                                  dest="enum_name",
@@ -162,7 +157,6 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
             "list": self.list,
             "leaf-list": self.leaf_list,
         }
-        self.prefix_default = ctx.opts.prefix_default
         self.enum_name = ctx.opts.enum_name
         self.ns_uri = {}
         self.model = {}
@@ -177,10 +171,9 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
             org = yam.search_one('organization')
             if org is not None:
                 self.org[yam] = org.arg
-            if (self.prefix_default):
-                pref = yam.search_one('prefix')
-                if pref is not None:
-                    self.prefix[yam] = pref.arg
+            pref = yam.search_one('prefix')
+            if pref is not None:
+                self.prefix[yam] = pref.arg
             rev = yam.search_one('revision')
             if rev is not None:
                 self.revision[yam] = rev.arg
