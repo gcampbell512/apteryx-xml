@@ -1616,12 +1616,16 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
             ns = sch_lookup_ns (instance, schema, name, flags, false);
             if (!ns)
             {
-                ERROR (flags, SCH_E_NOSCHEMANODE, "No namespace found \"%s\"\n", name);
-                goto exit;
+                /* No namespace found assume the node is supposed to have a colon in it */
+                colon[0] = ':';
             }
-            char *_name = name;
-            name = g_strdup (colon + 1);
-            free (_name);
+            else
+            {
+                /* We found a namespace. Remove the prefix */
+                char *_name = name;
+                name = g_strdup (colon + 1);
+                free (_name);
+            }
         }
         if (query && next && query < next)
             next = NULL;
@@ -1902,13 +1906,16 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
         ns = sch_lookup_ns (instance, schema, name, flags, false);
         if (!ns)
         {
-            ERROR (flags, SCH_E_NOSCHEMANODE, "No namespace found \"%s\"\n", name);
-            free (name);
-            return NULL;
+            /* No namespace found assume the node is supposed to have a colon in it */
+            colon[0] = ':';
         }
-        char *_name = name;
-        name = g_strdup (colon + 1);
-        free (_name);
+        else
+        {
+            /* We found a namespace. Remove the prefix */
+            char *_name = name;
+            name = g_strdup (colon + 1);
+            free (_name);
+        }
     }
 
     /* Find schema node */
@@ -2658,13 +2665,16 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
         ns = sch_lookup_ns (instance, schema, name, flags, false);
         if (!ns)
         {
-            ERROR (flags, SCH_E_NOSCHEMANODE, "No namespace found \"%s\"\n", name);
-            free (name);
-            return NULL;
+            /* No namespace found assume the node is supposed to have a colon in it */
+            colon[0] = ':';
         }
-        char *_name = name;
-        name = g_strdup (colon + 1);
-        free (_name);
+        else
+        {
+            /* We found a namespace. Remove the prefix */
+            char *_name = name;
+            name = g_strdup (colon + 1);
+            free (_name);
+        }
     }
 
     /* Find schema node */
@@ -2815,7 +2825,11 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
         char *namespace = g_strndup (name, colon - name);
         ns = sch_lookup_ns (instance, schema, namespace, flags, false);
         free (namespace);
-        name = colon + 1;
+        if (ns)
+        {
+             /* We found a namespace. Skip the prefix */
+            name = colon + 1;
+        }
     }
 
     /* Find schema node */
