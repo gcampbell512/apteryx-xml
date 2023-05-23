@@ -45,7 +45,7 @@ endif
 EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0 jansson)
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0 jansson)
 
-all: libapteryx-xml.so libapteryx-schema.so apteryx-xml.so
+all: libapteryx-xml.so libapteryx-schema.so apteryx/xml.so
 
 libapteryx-schema.so.$(ABI_VERSION): schema.o
 	@echo "Creating library "$@""
@@ -59,14 +59,15 @@ libapteryx-xml.so.$(ABI_VERSION): lua.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $< $(EXTRA_LDFLAGS) -L. -lapteryx-schema -Wl,-soname,$@
 
-apteryx-xml.so: libapteryx-xml.so
-	$(Q)ln -s -f $< $@
+apteryx/xml.so: libapteryx-xml.so
+	$(Q)mkdir -p apteryx
+	$(Q)cp libapteryx-xml.so apteryx/xml.so
 
 %.o: %.c
 	@echo "Compiling "$<""
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
-unittest: libapteryx-xml.so libapteryx-schema.so
+unittest: libapteryx-xml.so libapteryx-schema.so apteryx/xml.so
 unittest: test.c
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS) -L. -lapteryx-xml -lapteryx-schema -lcunit
@@ -77,8 +78,8 @@ apteryxd = \
 	fi; \
 	rm -f /tmp/apteryxd.pid; \
 	rm -f /tmp/apteryxd.run; \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):./ $(APTERYX_PATH)apteryxd -b -p /tmp/apteryxd.pid -r /tmp/apteryxd.run && sleep 0.1; \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):./ $(TEST_WRAPPER) ./$(1); \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):./:$(APTERYX_PATH) $(APTERYX_PATH)/apteryxd -b -p /tmp/apteryxd.pid -r /tmp/apteryxd.run && sleep 0.1; \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):./:$(APTERYX_PATH) $(TEST_WRAPPER) ./$(1); \
 	kill -TERM `cat /tmp/apteryxd.pid`;
 
 ifeq (test,$(firstword $(MAKECMDGOALS)))
@@ -106,6 +107,6 @@ install: all
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx-schema.so* libapteryx-xml.so* apteryx-xml.so unittest *.o
+	@rm -fr libapteryx-schema.so* libapteryx-xml.so* apteryx/xml.so unittest *.o
 
 .PHONY: all clean
