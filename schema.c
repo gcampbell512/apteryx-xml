@@ -676,12 +676,13 @@ sch_lookup_ns (sch_instance * instance, xmlNode *schema, const char *name, int f
 }
 
 static xmlNode *
-lookup_node (xmlNs *ns, xmlNode *node, const char *path)
+lookup_node (sch_instance *instance, xmlNs *ns, xmlNode *node, const char *path)
 {
     xmlNode *n;
     char *name, *mode;
     char *key = NULL;
     char *lk = NULL;
+    char *colon;
     int len;
 
     if (!node)
@@ -705,6 +706,26 @@ lookup_node (xmlNs *ns, xmlNode *node, const char *path)
         key = g_strdup (path);
         path = NULL;
     }
+
+    colon = strchr (key, ':');
+    if (colon)
+    {
+        colon[0] = '\0';
+        ns = sch_lookup_ns (instance, node, key, 0/*flags*/, false);
+        if (!ns)
+        {
+            /* No namespace found assume the node is supposed to have a colon in it */
+            colon[0] = ':';
+        }
+        else
+        {
+            /* We found a namespace. Remove the prefix */
+            char *_key = key;
+            key = g_strdup (colon + 1);
+            free (_key);
+        }
+    }
+
     for (n = node->children; n; n = n->next)
     {
         if (n->type != XML_ELEMENT_NODE)
@@ -729,14 +750,14 @@ lookup_node (xmlNs *ns, xmlNode *node, const char *path)
                     xmlFree (name);
                     xmlFree (mode);
                     /* restart search from root */
-                    return lookup_node (ns, xmlDocGetRootElement (node->doc), path);
+                    return lookup_node (instance, ns, xmlDocGetRootElement (node->doc), path);
                 }
                 xmlFree (name);
                 if (mode)
                 {
                     xmlFree (mode);
                 }
-                return lookup_node (ns, n, path);
+                return lookup_node (instance, ns, n, path);
             }
             xmlFree (name);
             return n;
@@ -755,7 +776,7 @@ lookup_node (xmlNs *ns, xmlNode *node, const char *path)
 sch_node *
 sch_lookup (sch_instance * instance, const char *path)
 {
-    return lookup_node (NULL, xmlDocGetRootElement (instance->doc), path);
+    return lookup_node (instance, NULL, xmlDocGetRootElement (instance->doc), path);
 }
 
 static sch_node *
