@@ -367,7 +367,8 @@ sch_load_namespace_mappings (sch_instance *instance, const char *filename)
     fp = fopen (filename, "r");
     if (fp)
     {
-        instance->map_hash_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+        if (!instance->map_hash_table)
+            instance->map_hash_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
 
         while (fgets (buf, sizeof (buf), fp) != NULL)
         {
