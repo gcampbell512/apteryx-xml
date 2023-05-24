@@ -813,6 +813,8 @@ sch_node *
 sch_node_parent (sch_node *node)
 {
     xmlNode *xml = (xmlNode *) node;
+    if (!node)
+        return NULL;
     if (xml->type == XML_ELEMENT_NODE && xml->name[0] == 'N')
         return (sch_node *) xml->parent;
     return NULL;
@@ -897,7 +899,16 @@ sch_preorder_next(sch_node *current, sch_node *root) {
 char *
 sch_name (sch_node * node)
 {
-    return (char *) xmlGetProp (node, (xmlChar *) "name");
+    xmlNode *n = (xmlNode *) node;
+    sch_instance *instance = n ? n->doc->_private : NULL;
+    char *name = (char *) xmlGetProp (n, (xmlChar *) "name");
+    if (!sch_ns_native (instance, n->ns) && !sch_node_parent (sch_node_parent (node)))
+    {
+        char *_name = g_strdup_printf ("%s:%s", n->ns->prefix, name);
+        free (name);
+        name = _name;
+    }
+    return name;
 }
 
 /* Ignoring ancestors allows checking that this is a node with the model data directly attached. */

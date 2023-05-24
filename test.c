@@ -122,26 +122,58 @@ test_lua_api_load (void)
 void
 test_lua_api_set_get (void)
 {
+    char *value;
     CU_ASSERT (_run_lua
                ("api = require('apteryx.xml').api('" TEST_SCHEMA_PATH "')                  \n"
-                "api.test.settings.debug = 'enable'                                        \n"
-                "assert(api.test.settings.debug == 'enable')                               \n"
-                "api.test.settings.debug = nil                                             \n"
-                "assert(api.test.settings.debug == 'disable')                              \n"));
+                "api.test.settings.priority = '1'                                          \n"
+                "assert(api.test.settings.priority == '1')                                 \n"));
+    value = apteryx_get ("/test/settings/priority");
+    CU_ASSERT (g_strcmp0 (value, "1") == 0);
+    free (value);
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx.xml').api('" TEST_SCHEMA_PATH "')                  \n"
+                "api.test.settings.priority = nil                                          \n"
+                "assert(api.test.settings.priority == nil)                                 \n"));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
 void
-test_lua_ns_set_get (void)
+test_lua_ns_default_set_get (void)
 {
+    char *value;
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx.xml').api('" TEST_SCHEMA_PATH "')                  \n"
+                "api['test:test'].settings.priority = '1'                                  \n"
+                "assert(api['test:test'].settings.priority == '1')                         \n"));
+    value = apteryx_get ("/test/settings/priority");
+    CU_ASSERT (g_strcmp0 (value, "1") == 0);
+    free (value);
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx.xml').api('" TEST_SCHEMA_PATH "')                  \n"
+                "api['test:test'].settings.priority = nil                                  \n"
+                "assert(api['test:test'].settings.priority == nil)                         \n"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+
+void
+test_lua_ns_other_set_get (void)
+{
+    char *value;
     CU_ASSERT (_run_lua
                ("api = require('apteryx.xml').api('" TEST_SCHEMA_PATH "')                  \n"
                 "api['t2:test'].settings.priority = '2'                                    \n"
-                "assert(api['t2:test'].settings.priority == '2')                           \n"
+                "assert(api['t2:test'].settings.priority == '2')                           \n"));
+    value = apteryx_get ("/t2:test/settings/priority");
+    CU_ASSERT (g_strcmp0 (value, "2") == 0);
+    free (value);
+    CU_ASSERT (_run_lua
+               ("api = require('apteryx.xml').api('" TEST_SCHEMA_PATH "')                  \n"
                 "api['t2:test'].settings.priority = nil                                    \n"
                 "assert(api['t2:test'].settings.priority == nil)                           \n"));
     CU_ASSERT (assert_apteryx_empty ());
 }
+
 
 void
 test_lua_api_list (void)
@@ -333,7 +365,8 @@ CU_TestInfo tests_lua[] = {
     {"lua load module", test_lua_lib_load},
     {"lua load models", test_lua_api_load},
     {"lua api set get", test_lua_api_set_get},
-    {"lua ns set get", test_lua_ns_set_get},
+    {"lua ns default set get", test_lua_ns_default_set_get},
+    {"lua ns other set get", test_lua_ns_other_set_get},
     {"lua api list", test_lua_api_list},
     {"lua api trivial list", test_lua_api_trivial_list},
     {"lua api search", test_lua_api_search},
