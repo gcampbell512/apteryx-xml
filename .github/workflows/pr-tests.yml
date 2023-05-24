@@ -1,0 +1,23 @@
+name: Run unit tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      run: sudo apt-get install -y build-essential libglib2.0-dev libxml2-dev libcunit1-dev libjansson-dev liblua5.2-dev
+    - name: Clone apteryx
+      uses: actions/checkout@v2
+      with:
+        repository: alliedtelesis/apteryx
+        path: apteryx
+    - name: Build Apteryx
+      run: make -C ./apteryx
+    - name: Build
+      run: APTERYX_PATH=./apteryx make
+    - name: Run tests
+      run: APTERYX_PATH=./apteryx make test
