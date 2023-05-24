@@ -112,15 +112,33 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
     # Ouput define
     fd.write('#define ' + define + ' "' + value + '"\n')
 
-    type = node.search_one('type')
-    if type is not None:
-        if type.arg == 'boolean':
+    ntype = node.search_one('type')
+    if ntype is not None and ntype.arg in module.i_typedefs:
+        typedef = module.i_typedefs[ntype.arg].copy()
+        typedef.arg = node.arg
+        ndescr = node.search_one('description')
+        if ndescr is not None:
+            tdescr = typedef.search_one('description')
+            if tdescr is None:
+                typedef.substmts.append(ndescr)
+            else:
+                tdescr.arg = ndescr.arg
+        typedef.i_config = node.i_config
+        if node.i_default is not None:
+            typedef.i_default = node.i_default
+            typedef.i_default_str = node.i_default_str
+        typedef.keyword = node.keyword
+        node = typedef
+        ntype = node.search_one('type')
+
+    if ntype is not None:
+        if ntype.arg == 'boolean':
             fd.write('#define ' + define + '_TRUE "true"\n')
             fd.write('#define ' + define + '_FALSE "false"\n')
 
-        if type.arg == 'enumeration':
+        if ntype.arg == 'enumeration':
             count = 0
-            for enum in type.substmts:
+            for enum in ntype.substmts:
                 val = enum.search_one('value')
                 if val is not None:
                     fd.write('#define ' + define + '_' + enum.arg.replace('-', '_').upper() + ' ' + str(val.arg) + '\n')
@@ -137,7 +155,7 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
     # Default value
     def_val = node.search_one('default')
     if def_val is not None:
-        if type is not None and 'int' in type.arg:
+        if ntype is not None and 'int' in ntype.arg:
             fd.write('#define ' + define + '_DEFAULT ' + def_val.arg + '\n')
         else:
             fd.write('#define ' + define + '_DEFAULT "' + def_val.arg + '"\n')

@@ -193,7 +193,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
         root.set("xsi:schemaLocation", "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd")
         for yam in modules:
-            self.process_children(yam, root, None, path)
+            self.process_children(yam, root, yam, path)
         self.format(root, indent="  ")
         stream = io.BytesIO()
         etree.ElementTree(root).write(stream, 'UTF-8', xml_declaration=True)
@@ -230,7 +230,25 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         self.process_children(node, nel, newm, path)
 
     def leaf(self, node, elem, module, path):
-        nel, newm, path = self.sample_element(node, elem, module, path)
+        ntype = node.search_one("type")
+        if ntype is not None and ntype.arg in module.i_typedefs:
+            typedef = module.i_typedefs[ntype.arg].copy()
+            typedef.arg = node.arg
+            ndescr = node.search_one('description')
+            if ndescr is not None:
+                tdescr = typedef.search_one('description')
+                if tdescr is None:
+                    typedef.substmts.append(ndescr)
+                else:
+                    tdescr.arg = ndescr.arg
+            typedef.i_config = node.i_config
+            if node.i_default is not None:
+                typedef.i_default = node.i_default
+                typedef.i_default_str = node.i_default_str
+            typedef.keyword = node.keyword
+            nel, newm, path = self.sample_element(typedef, elem, module, path)
+        else:
+            nel, newm, path = self.sample_element(node, elem, module, path)
 
     def list(self, node, elem, module, path):
         nel, newm, path = self.sample_element(node, elem, module, path)
