@@ -540,6 +540,17 @@ match_name (const char *s1, const char *s2)
 }
 
 static bool
+sch_ns_native (sch_instance *instance, xmlNs *ns)
+{
+    if (instance && instance->map_hash_table)
+    {
+        if (g_hash_table_lookup (instance->map_hash_table, (const char *) ns->href))
+            return false;
+    }
+    return true;
+}
+
+static bool
 remove_hidden_children (xmlNode *node)
 {
     char *mode;
@@ -582,6 +593,35 @@ remove_hidden_children (xmlNode *node)
     return true;
 }
 
+static void
+format_api_namespaces (sch_instance * instance, xmlNode *node, int depth)
+{
+    xmlNode *child;
+
+    if (node == NULL)
+        return;
+
+    child = node->children;
+    while (child)
+    {
+        if (depth == 0 && child->ns->prefix && !sch_ns_native (instance, child->ns))
+        {
+            /* Replace top-level nodes of non-native models with the namespace prefixed name */
+            char *old = sch_name (child);
+            char *name = g_strdup_printf ("%s:%s",child->ns->prefix, old);
+            xmlSetProp (child, (const xmlChar *)"name", (const xmlChar *)name);
+            free (name);
+            free (old);
+        }
+        format_api_namespaces (instance, child, depth + 1);
+        /* Do not output namespace prefixes on xml dump */
+        child->ns = NULL;
+        child = child->next;
+    }
+
+    return;
+}
+
 char *
 sch_dump_xml (sch_instance * instance)
 {
@@ -591,20 +631,10 @@ sch_dump_xml (sch_instance * instance)
 
     xmlDoc *copy = xmlCopyDoc (xml->doc, 1);
     remove_hidden_children (xmlDocGetRootElement (copy));
+    format_api_namespaces (instance, xmlDocGetRootElement (copy), 0);
     xmlDocDumpFormatMemory (copy, &xmlbuf, &bufsize, 1);
     xmlFreeDoc (copy);
     return (char *) xmlbuf;
-}
-
-static bool
-sch_ns_native (sch_instance *instance, xmlNs *ns)
-{
-    if (instance && instance->map_hash_table)
-    {
-        if (g_hash_table_lookup (instance->map_hash_table, (const char *) ns->href))
-            return false;
-    }
-    return true;
 }
 
 static bool
