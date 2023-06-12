@@ -155,9 +155,38 @@ exit:
     return ret;
 }
 
+static void
+insert_in_order (xmlNs *ns, xmlNode *parent, xmlNode *child)
+{
+    xmlNode *sibling = NULL;
+    /* Add nodes for the current model before any augmentations */
+    if (ns && child->ns && g_strcmp0 ((char *) ns->href, (char *) child->ns->href) == 0)
+    {
+        sibling = parent->children;
+        while (sibling)
+        {
+            if (g_strcmp0 ((char *) ns->href, (char *) sibling->ns->href) != 0)
+                break;
+            sibling = sibling->next;
+        }
+    }
+    if (sibling)
+    {
+        if (child->parent)
+            xmlUnlinkNode (child);
+        // printf ("Adding %s after %s\n", xmlGetProp (child, (xmlChar *)"name"), xmlGetProp (sibling, (xmlChar *)"name"));
+        xmlAddPrevSibling (sibling, child);
+    }
+    else if (!child->parent)
+    {
+        // printf ("Adding %s to end\n", xmlGetProp (child, (xmlChar *)"name"));
+        xmlAddChild (parent, child);
+    }
+}
+
 /* Merge nodes from a new tree to the original tree */
 static void
-merge_nodes (xmlNode * parent, xmlNode * orig, xmlNode * new, int depth)
+merge_nodes (xmlNs * ns, xmlNode * parent, xmlNode * orig, xmlNode * new, int depth)
 {
     xmlNode *n;
     xmlNode *o;
@@ -201,15 +230,18 @@ merge_nodes (xmlNode * parent, xmlNode * orig, xmlNode * new, int depth)
         if (o)
         {
             /* Already exists - merge in the children */
-            merge_nodes (o, o->children, n->children, depth + 1);
+            merge_nodes (ns, o, o->children, n->children, depth + 1);
+            if (depth > 0)
+                insert_in_order (ns, parent, o);
         }
         else
         {
             /* New node */
             o = xmlCopyNode (n, 1);
-
-            /* Add as a child to the existing tree node */
-            xmlAddChild (parent, o);
+            if (depth > 0)
+                insert_in_order (ns, parent, o);
+            else
+                xmlAddChild (parent, o);
         }
     }
 }
@@ -451,9 +483,15 @@ sch_load (const char *path)
         }
         xmlNode *module_new = xmlDocGetRootElement (doc_new);
         cleanup_nodes (module_new);
+        /* Sanity check for empty modules */
+        if (!module_new || !module_new->children || module_new->children->name[0] != 'N')
+        {
+            syslog (LOG_ERR, "XML: ignoring empty schema \"%s\"", filename);
+            continue;
+        }
         copy_nsdef_to_root (instance->doc, module_new);
         add_module_info_to_child (instance, module_new);
-        merge_nodes (module, module->children, module_new->children, 0);
+        merge_nodes (module_new->ns, module, module->children, module_new->children, 0);
         xmlFreeDoc (doc_new);
         assign_ns_to_root (instance->doc, module->children);
     }
