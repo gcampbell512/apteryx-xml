@@ -318,9 +318,15 @@ copy_nsdef_to_root (xmlDoc *doc, xmlNode *node)
         xmlNsPtr ns = n->nsDef;
         while (ns)
         {
-            if (ns->prefix && ns->href && !xmlSearchNsByHref (doc, xmlDocGetRootElement (doc), ns->href))
+            if (ns->href && !xmlSearchNsByHref (doc, xmlDocGetRootElement (doc), ns->href))
             {
-                xmlNewNs (xmlDocGetRootElement (doc), ns->href, ns->prefix);
+                char *prefix = (char *) ns->prefix;
+                if (!prefix)
+                    prefix = (char *) xmlGetProp (n, (xmlChar *)"prefix");
+                if (prefix)
+                    xmlNewNs (xmlDocGetRootElement (doc), ns->href, (xmlChar *)prefix);
+                if (!ns->prefix)
+                    free (prefix);
             }
             ns = ns->next;
         }
