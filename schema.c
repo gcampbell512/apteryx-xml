@@ -645,6 +645,14 @@ format_api_namespaces (sch_instance * instance, xmlNode *node, int depth)
     if (node == NULL)
         return;
 
+    /* Chop all namespaces except the apteryx one from root node */
+    if (depth == 0)
+    {
+        xmlFreeNsList (node->nsDef);
+        node->nsDef = NULL;
+        xmlNewNs (node, (xmlChar *)"https://github.com/alliedtelesis/apteryx", (xmlChar *)"");
+    }
+
     child = node->children;
     while (child)
     {
