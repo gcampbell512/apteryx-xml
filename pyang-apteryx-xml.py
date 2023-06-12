@@ -137,13 +137,14 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         g.add_options(optlist)
 
     def add_output_format(self, fmts):
-        self.multiple_modules = True
+        self.multiple_modules = False
         fmts['apteryx-xml'] = self
 
     def setup_fmt(self, ctx):
         ctx.implicit_errors = False
 
     def emit(self, ctx, modules, fd):
+        module = modules[0]
         path = []
         for (epos, etag, eargs) in ctx.errors:
             if error.is_error(error.err_level(etag)):
@@ -158,42 +159,54 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
             "leaf-list": self.leaf_list,
         }
         self.enum_name = ctx.opts.enum_name
-        self.ns_uri = {}
-        self.model = {}
-        self.org = {}
-        self.prefix = {}
-        self.revision = {}
-        for yam in modules:
-            self.model[yam] = yam.arg
-            ns = yam.search_one('namespace')
-            if ns is not None:
-                self.ns_uri[yam] = ns.arg
-            org = yam.search_one('organization')
-            if org is not None:
-                self.org[yam] = org.arg
-            pref = yam.search_one('prefix')
-            if pref is not None:
-                self.prefix[yam] = pref.arg
-            rev = yam.search_one('revision')
-            if rev is not None:
-                self.revision[yam] = rev.arg
 
+        # Create the root node
         root = etree.Element("MODULE")
-        if (yam in self.prefix and yam in self.ns_uri):
-            root.set("xmlns", self.ns_uri[yam])
-            root.set("xmlns:" + self.prefix[yam], self.ns_uri[yam])
-        else:
-            root.set("xmlns", "https://github.com/alliedtelesis/apteryx")
-        if (yam in self.model):
-            root.set("model", self.model[yam])
-        if (yam in self.org):
-            root.set("organization", self.org[yam])
-        if (yam in self.revision):
-            root.set("version", self.revision[yam])
         root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
         root.set("xsi:schemaLocation", "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd")
-        for yam in modules:
-            self.process_children(yam, root, yam, path)
+        root.set("model", module.arg)
+        namespace = module.search_one('namespace')
+        if namespace is not None:
+            root.set("namespace", namespace.arg)
+        prefix = module.search_one('prefix')
+        if prefix is not None:
+            root.set("prefix", prefix.arg)
+        org = module.search_one('organization')
+        if org is not None:
+            root.set("organization", org.arg)
+        rev = module.search_one('revision')
+        if rev is not None:
+            root.set("version", rev.arg)
+
+        # Add any included/imported models
+        for m in module.search("include"):
+            subm = ctx.get_module(m.arg)
+            if subm is not None:
+                modules.append(subm)
+        for m in module.search("import"):
+            subm = ctx.get_module(m.arg)
+            if subm is not None:
+                modules.append(subm)
+
+        # Register all namespaces
+        for m in modules:
+            ns = m.search_one('namespace')
+            pref = m.search_one('prefix')
+            if ns is not None and pref is not None:
+                etree.register_namespace(pref.arg, ns.arg)
+        if namespace is not None:
+            if prefix is not None:
+                etree.register_namespace(prefix.arg, namespace.arg)
+            # This must be last!
+            etree.register_namespace("", namespace.arg)
+        else:
+            etree.register_namespace("", "https://github.com/alliedtelesis/apteryx")
+
+        # Process all NODEs
+        for m in modules:
+            self.process_children(m, root, module, path)
+
+        # Dump output
         self.format(root, indent="  ")
         stream = io.BytesIO()
         etree.ElementTree(root).write(stream, 'UTF-8', xml_declaration=True)
@@ -262,6 +275,16 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
     def leaf_list(self, node, elem, module, path):
         nel, newm, path = self.sample_element(node, elem, module, path)
 
+    def node_in_namespace(self, node, ns):
+        chns = node.i_module.search_one('namespace')
+        if chns is not None and chns == ns:
+            return True
+        if (hasattr(node, "i_children")):
+            for ch in node.i_children:
+                if self.node_in_namespace(ch, ns):
+                    return True
+        return False
+
     def sample_element(self, node, parent, module, path):
         if path is None:
             return parent, module, None
@@ -272,8 +295,11 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 path = path[1:]
             else:
                 return parent, module, None
-
-        res = etree.SubElement(parent, "NODE")
+        # Do not keep this node if it or its children are not in the modules namespace
+        if not self.node_in_namespace(node, module.search_one('namespace')):
+            return parent, module, None
+        ns = node.i_module.search_one('namespace')
+        res = etree.SubElement(parent, "{" + ns.arg + "}NODE")
         res.attrib = OrderedDict()
         res.attrib["name"] = node.arg
         if node.keyword == 'leaf':
@@ -289,7 +315,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
             res.attrib["help"] = descr.arg
 
         if node.keyword is not None and (node.keyword == "list" or node.keyword == "leaf-list"):
-            res = etree.SubElement(res, "NODE")
+            res = etree.SubElement(res, "{" + ns.arg + "}NODE")
             res.attrib = OrderedDict()
             res.attrib["name"] = "*"
             key = node.search_one("key")
@@ -310,18 +336,18 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 if npatt is not None:
                     res.attrib["pattern"] = npatt.arg
             if ntype.arg == "boolean":
-                value = etree.SubElement(res, "VALUE")
+                value = etree.SubElement(res, "{" + ns.arg + "}VALUE")
                 value.attrib = OrderedDict()
                 value.attrib["name"] = "true"
                 value.attrib["value"] = "true"
-                value = etree.SubElement(res, "VALUE")
+                value = etree.SubElement(res, "{" + ns.arg + "}VALUE")
                 value.attrib = OrderedDict()
                 value.attrib["name"] = "false"
                 value.attrib["value"] = "false"
             if ntype.arg == "enumeration":
                 count = 0
                 for enum in ntype.substmts:
-                    value = etree.SubElement(res, "VALUE")
+                    value = etree.SubElement(res, "{" + ns.arg + "}VALUE")
                     value.attrib = OrderedDict()
                     value.attrib["name"] = enum.arg
                     val = enum.search_one('value')
