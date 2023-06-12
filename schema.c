@@ -656,7 +656,7 @@ format_api_namespaces (sch_instance * instance, xmlNode *node, int depth)
     child = node->children;
     while (child)
     {
-        if (depth == 0 && child->ns->prefix && !sch_ns_native (instance, child->ns))
+        if (depth == 0 && child->ns && child->ns->prefix && !sch_ns_native (instance, child->ns))
         {
             /* Replace top-level nodes of non-native models with the namespace prefixed name */
             char *old = sch_name (child);
