@@ -484,7 +484,7 @@ sch_load (const char *path)
         xmlNode *module_new = xmlDocGetRootElement (doc_new);
         cleanup_nodes (module_new);
         /* Sanity check for empty modules */
-        if (!module_new || !module_new->children || module_new->children->name[0] != 'N')
+        if (!module_new || !module_new->children || (module_new->children->name[0] != 'N' && module_new->children->name[0] != 'S'))
         {
             syslog (LOG_ERR, "XML: ignoring empty schema \"%s\"", filename);
             continue;
