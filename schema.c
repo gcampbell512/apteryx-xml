@@ -331,7 +331,8 @@ add_module_info_to_child (sch_instance *instance, xmlNode *module)
         instance->models_list = (void *) g_list_append (instance->models_list, loaded);
     }
 
-    add_module_info_to_children (module->children, def, mod, org, ver);
+    if (mod)
+        add_module_info_to_children (module->children, def, mod, org, ver);
     if (mod)
         xmlFree (mod);
     if (org)
@@ -675,6 +676,43 @@ format_api_namespaces (sch_instance * instance, xmlNode *node, int depth)
     return;
 }
 
+static gint
+xmlNodeCmp (gconstpointer a, gconstpointer b)
+{
+    char *aname = (char *) xmlGetProp ((xmlNode *) a, (xmlChar *) "name");
+    char *bname = (char *) xmlGetProp ((xmlNode *) b, (xmlChar *) "name");
+    gint result = g_strcmp0 (aname, bname);
+    free (aname);
+    free (bname);
+    return result;
+}
+
+static void
+sort_root_nodes (xmlNode *module)
+{
+    GList *nodes = NULL;
+    xmlNode *child = module->children;
+    while (child)
+    {
+        xmlNode *next = child->next;
+        nodes = g_list_prepend (nodes, child);
+        xmlUnlinkNode (child);
+        child = next;
+    }
+    nodes = g_list_sort (nodes, xmlNodeCmp);
+    xmlNode *prev = NULL;
+    for (GList *iter = nodes; iter; iter = iter->next)
+    {
+        child = (xmlNode *) iter->data;
+        if (prev)
+            xmlAddNextSibling (prev, child);
+        else
+            xmlAddChild (module, child);
+        prev = child;
+    }
+    g_list_free (nodes);
+}
+
 char *
 sch_dump_xml (sch_instance * instance)
 {
@@ -685,6 +723,7 @@ sch_dump_xml (sch_instance * instance)
     xmlDoc *copy = xmlCopyDoc (xml->doc, 1);
     remove_hidden_children (xmlDocGetRootElement (copy));
     format_api_namespaces (instance, xmlDocGetRootElement (copy), 0);
+    sort_root_nodes (xmlDocGetRootElement (copy));
     xmlDocDumpFormatMemory (copy, &xmlbuf, &bufsize, 1);
     xmlFreeDoc (copy);
     return (char *) xmlbuf;
