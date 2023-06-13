@@ -650,7 +650,8 @@ format_api_namespaces (sch_instance * instance, xmlNode *node, int depth)
     {
         xmlFreeNsList (node->nsDef);
         node->nsDef = NULL;
-        xmlNewNs (node, (xmlChar *)"https://github.com/alliedtelesis/apteryx", (xmlChar *)"");
+        xmlNewNs (node, (xmlChar *)"https://github.com/alliedtelesis/apteryx", NULL);
+        xmlNewNs (node, (xmlChar *)"http://www.w3.org/2001/XMLSchema-instance", (xmlChar *)"xsi");
     }
 
     child = node->children;
