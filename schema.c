@@ -451,6 +451,7 @@ sch_load (const char *path)
 {
     sch_instance *instance;
     xmlNode *module;
+    xmlNs *ns;
     GList *files = NULL;
     GList *iter;
 
@@ -460,7 +461,8 @@ sch_load (const char *path)
     /* Create a new doc and root node for the merged MODULE */
     instance->doc = xmlNewDoc ((xmlChar *) "1.0");
     module = xmlNewNode (NULL, (xmlChar *) "MODULE");
-    xmlNewNs (module, (const xmlChar *) "https://github.com/alliedtelesis/apteryx", NULL);
+    ns = xmlNewNs (module, (const xmlChar *) "https://github.com/alliedtelesis/apteryx", NULL);
+    xmlSetNs (module, ns);
     xmlNewNs (module, (const xmlChar *) "http://www.w3.org/2001/XMLSchema-instance", (const xmlChar *) "xsi");
     xmlNewProp (module, (const xmlChar *) "xsi:schemaLocation",
         (const xmlChar *) "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd");
@@ -639,21 +641,12 @@ remove_hidden_children (xmlNode *node)
 }
 
 static void
-format_api_namespaces (sch_instance * instance, xmlNode *node, int depth)
+format_api_namespaces (sch_instance * instance, xmlNs *ns, xmlNode *node, int depth)
 {
     xmlNode *child;
 
     if (node == NULL)
         return;
-
-    /* Chop all namespaces except the apteryx one from root node */
-    if (depth == 0)
-    {
-        xmlFreeNsList (node->nsDef);
-        node->nsDef = NULL;
-        xmlNewNs (node, (xmlChar *)"https://github.com/alliedtelesis/apteryx", NULL);
-        xmlNewNs (node, (xmlChar *)"http://www.w3.org/2001/XMLSchema-instance", (xmlChar *)"xsi");
-    }
 
     child = node->children;
     while (child)
@@ -667,10 +660,26 @@ format_api_namespaces (sch_instance * instance, xmlNode *node, int depth)
             free (name);
             free (old);
         }
-        format_api_namespaces (instance, child, depth + 1);
-        /* Do not output namespace prefixes on xml dump */
-        child->ns = NULL;
+        format_api_namespaces (instance, ns, child, depth + 1);
+        /* Everything in the apteryx namespace */
+        child->ns = ns;
         child = child->next;
+    }
+
+    /* Get rid of all non default namespace definitions on the root node */
+    if (depth == 0)
+    {
+        xmlNs *cur = node->nsDef;
+        while (cur != NULL)
+        {
+            xmlNs *next = cur->next;
+            if (cur != ns)
+                xmlFreeNs (cur);
+            cur = next;
+        }
+        node->nsDef = ns;
+        ns->next = NULL;
+        xmlNewNs (node, (const xmlChar *) "http://www.w3.org/2001/XMLSchema-instance", (const xmlChar *) "xsi");
     }
 
     return;
@@ -722,7 +731,7 @@ sch_dump_xml (sch_instance * instance)
 
     xmlDoc *copy = xmlCopyDoc (xml->doc, 1);
     remove_hidden_children (xmlDocGetRootElement (copy));
-    format_api_namespaces (instance, xmlDocGetRootElement (copy), 0);
+    format_api_namespaces (instance, xmlDocGetRootElement (copy)->ns, xmlDocGetRootElement (copy), 0);
     sort_root_nodes (xmlDocGetRootElement (copy));
     xmlDocDumpFormatMemory (copy, &xmlbuf, &bufsize, 1);
     xmlFreeDoc (copy);
@@ -737,7 +746,13 @@ sch_ns_match (xmlNode *node, xmlNs *ns)
     /* Check for native namespace match */
     if (node && !ns)
     {
-        if (sch_ns_native (instance, node->ns))
+        if (!node->ns)
+        {
+            xmlChar *name = xmlGetProp (node, (xmlChar *)"name");
+            syslog (LOG_ERR, "XML: NODE \"%s\" missing namespace!", name);
+            xmlFree (name);
+        }
+        if (!node->ns || sch_ns_native (instance, node->ns))
             return TRUE;
         return FALSE;
     }
