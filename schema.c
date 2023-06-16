@@ -51,11 +51,14 @@ static __thread char tl_errmsg[BUFSIZ] = {0};
         DEBUG (flags, fmt, ## args); \
     }
 
+#define READ_BUF_SIZE 512
+
 typedef struct _sch_instance
 {
     xmlDoc *doc;
     GList *models_list;
     GHashTable *map_hash_table;
+    GHashTable *model_hash_table;
 } sch_instance;
 
 typedef struct _sch_xml_to_gnode_parms_s
@@ -296,11 +299,44 @@ add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *
 static void
 add_module_info_to_child (sch_instance *instance, xmlNode *module)
 {
+    xmlChar *mod = xmlGetProp (module, (xmlChar *) "model");
+
+    if (mod)
+    {
+        xmlChar *org = xmlGetProp (module, (xmlChar *) "organization");
+        xmlChar *ver = xmlGetProp (module, (xmlChar *) "version");
+        xmlNsPtr def = xmlSearchNs (module->doc, module, NULL);
+        add_module_info_to_children (module->children, def, mod, org, ver);
+        xmlFree (mod);
+        if (org)
+            xmlFree (org);
+        if (ver)
+            xmlFree (ver);
+    }
+}
+
+static bool
+save_module_info (sch_instance *instance, xmlNode *module)
+{
     sch_loaded_model *loaded;
-    xmlChar *mod = xmlGetProp (module, (xmlChar *)"model");
-    xmlChar *org = xmlGetProp (module, (xmlChar *)"organization");
-    xmlChar *ver = xmlGetProp (module, (xmlChar *)"version");
-    xmlNsPtr def = xmlSearchNs (module->doc, module, NULL);
+    xmlChar *mod = xmlGetProp (module, (xmlChar *) "model");
+    xmlChar *org = xmlGetProp (module, (xmlChar *) "organization");
+    xmlChar *ver = xmlGetProp (module, (xmlChar *) "version");
+
+    if (instance->model_hash_table)
+    {
+        if (!mod || strlen ((char *) mod ) == 0 ||
+            !g_hash_table_lookup (instance->model_hash_table, (const char *) mod))
+        {
+            if (mod)
+                xmlFree (mod);
+            if (org)
+                xmlFree (org);
+            if (ver)
+                xmlFree (ver);
+            return false;
+        }
+    }
 
     loaded = g_malloc0 (sizeof (sch_loaded_model));
     if (loaded)
@@ -332,13 +368,13 @@ add_module_info_to_child (sch_instance *instance, xmlNode *module)
     }
 
     if (mod)
-        add_module_info_to_children (module->children, def, mod, org, ver);
-    if (mod)
         xmlFree (mod);
     if (org)
         xmlFree (org);
     if (ver)
         xmlFree (ver);
+
+    return true;
 }
 
 static void
@@ -398,18 +434,19 @@ sch_load_namespace_mappings (sch_instance *instance, const char *filename)
 {
     FILE *fp = NULL;
     gchar **ns_names;
-    char buf[256];
+    char *buf;
 
     if (!instance)
         return;
 
+    buf = g_malloc0 (READ_BUF_SIZE);
     fp = fopen (filename, "r");
-    if (fp)
+    if (fp && buf)
     {
         if (!instance->map_hash_table)
             instance->map_hash_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
 
-        while (fgets (buf, sizeof (buf), fp) != NULL)
+        while (fgets (buf, READ_BUF_SIZE, fp) != NULL)
         {
             /* Skip comment lines */
             if (buf[0] == '#')
@@ -443,11 +480,63 @@ sch_load_namespace_mappings (sch_instance *instance, const char *filename)
         }
         fclose (fp);
     }
+    g_free (buf);
+}
+
+static void
+sch_load_model_list (sch_instance *instance, const char *path, const char *model_list_filename)
+{
+    FILE *fp = NULL;
+    char *name;
+    char *buf;
+
+    if (!instance)
+        return;
+
+    buf = g_malloc0 (READ_BUF_SIZE);
+    name = g_strdup_printf ("%s/%s", path, model_list_filename);
+    fp = fopen (name, "r");
+    if (fp && buf)
+    {
+        if (!instance->model_hash_table)
+            instance->model_hash_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+
+        while (fgets (buf, READ_BUF_SIZE, fp) != NULL)
+        {
+            /* Skip comment lines */
+            if (buf[0] == '#')
+                continue;
+
+            /* Remove any trailing LF */
+            buf[strcspn(buf, "\n")] = '\0';
+            if (strlen (buf) > 0)
+            {
+                void *old_key;
+                void *old_value;
+
+                /* Look up this node name to check for duplicates. */
+                if (g_hash_table_lookup_extended (instance->model_hash_table, buf,
+                                                  &old_key, &old_value))
+                {
+                    g_free (old_key);
+                    g_free (old_value);
+                }
+                else
+                {
+                    g_hash_table_insert (instance->model_hash_table, g_strdup (buf),
+                                         g_strdup (buf));
+                }
+            }
+        }
+        fclose (fp);
+    }
+    g_free (name);
+    g_free (buf);
 }
 
 /* Parse all XML files in the search path and merge trees */
-sch_instance *
-sch_load (const char *path)
+static sch_instance *
+_sch_load (const char *path, const char *model_list_filename)
 {
     sch_instance *instance;
     xmlNode *module;
@@ -467,6 +556,9 @@ sch_load (const char *path)
     xmlNewProp (module, (const xmlChar *) "xsi:schemaLocation",
         (const xmlChar *) "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd");
     xmlDocSetRootElement (instance->doc, module);
+
+    if (model_list_filename)
+        sch_load_model_list (instance, path, model_list_filename);
 
     list_schema_files (&files, path);
     for (iter = files; iter; iter = g_list_next (iter))
@@ -493,10 +585,17 @@ sch_load (const char *path)
             continue;
         }
         copy_nsdef_to_root (instance->doc, module_new);
-        add_module_info_to_child (instance, module_new);
-        merge_nodes (module_new->ns, module, module->children, module_new->children, 0);
-        xmlFreeDoc (doc_new);
-        assign_ns_to_root (instance->doc, module->children);
+        if (save_module_info (instance, module_new))
+        {
+            add_module_info_to_child (instance, module_new);
+            merge_nodes (module_new->ns, module, module->children, module_new->children, 0);
+            xmlFreeDoc (doc_new);
+            assign_ns_to_root (instance->doc, module->children);
+        }
+        else
+        {
+            xmlFreeDoc (doc_new);
+        }
     }
     g_list_free_full (files, free);
 
@@ -504,6 +603,22 @@ sch_load (const char *path)
     instance->doc->_private = (void *) instance;
 
     return instance;
+}
+
+sch_instance *
+sch_load (const char *path)
+{
+    return _sch_load (path, NULL);
+}
+
+/**
+ * Only load XML models that are specified in the model list file. If the model list
+ * filename is NULL, all models are loaded.
+ */
+sch_instance *
+sch_load_with_model_list_filename (const char *path, const char *model_list_filename)
+{
+    return _sch_load (path, model_list_filename);
 }
 
 static void
@@ -555,6 +670,8 @@ sch_free (sch_instance * instance)
             xmlFreeDoc (instance->doc);
         if (instance->map_hash_table)
             g_hash_table_destroy (instance->map_hash_table);
+        if (instance->model_hash_table)
+            g_hash_table_destroy (instance->model_hash_table);
         g_free (instance);
     }
 }

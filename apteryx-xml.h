@@ -49,6 +49,8 @@ typedef void * sch_xml_to_gnode_parms;
 typedef struct _sch_instance sch_instance;
 typedef void sch_node;
 sch_instance *sch_load (const char *path);
+sch_instance *sch_load_with_model_list_filename (const char *path,
+                                                 const char *model_list_filename);
 void sch_free (sch_instance * instance);
 sch_node *sch_lookup (sch_instance * instance, const char *path);
 char *sch_dump_xml (sch_instance * instance);
