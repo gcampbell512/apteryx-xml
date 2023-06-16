@@ -600,7 +600,6 @@ sch_ns_native (sch_instance *instance, xmlNs *ns)
 static bool
 remove_hidden_children (xmlNode *node)
 {
-    char *mode;
     xmlNode *child;
 
     if (node == NULL)
@@ -628,14 +627,6 @@ remove_hidden_children (xmlNode *node)
             child = child->next;
         }
     }
-
-    /* If it doesn't have a mode, and there are no children, pretend it doesn't exist */
-    mode = (char *)xmlGetProp (node, (xmlChar *) "mode");
-    if (mode == NULL && node->children == NULL)
-    {
-        return false;
-    }
-    xmlFree(mode);
 
     return true;
 }
@@ -1142,16 +1133,23 @@ sch_is_leaf (sch_node * node)
     xmlNode *xml = (xmlNode *) node;
     xmlNode *n;
 
-    if (!xml->children)
+    if (!xml->children && xmlHasProp (xml, (const xmlChar *)"mode"))
     {
+        /* Defintely a leaf */
         return true;
     }
     for (n = xml->children; n; n = n->next)
     {
         if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
         {
+            /* Defintely not a leaf */
             return false;
         }
+    }
+    if (!xml->children && !xmlHasProp (xml, (const xmlChar *)"mode"))
+    {
+        /* Probably an empty container - so not a leaf */
+        return false;
     }
     return true;
 }
@@ -2153,7 +2151,8 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
                 has_child = true;
             }
         }
-        if (has_child && parent)
+        /* Add this node if we found children or its an empty presence container */
+        if (parent && (has_child || !((xmlNode *)schema)->children))
         {
             xmlAddChild (parent, data);
         }

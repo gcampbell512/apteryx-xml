@@ -15,6 +15,8 @@
         <VALUE name="true" value="true"/>
         <VALUE name="false" value="false"/>
       </NODE>
+      <NODE name="empty" help="an empty container">
+      </NODE>
       <NODE name="priority" mode="rw" help="integer" pattern="^[1-5]$"/>
       <NODE name="writeonly" mode="w" help="A write only field"/>
       <NODE name="readonly" mode="r" default="yes" help="A read only field">
@@ -46,10 +48,10 @@
     <NODE name="state" help="State">
       <NODE name="counter" mode="r" default="0" help="uint32"/>
       <NODE name="uptime" help="uptime">
-        <NODE name="days" help="days" pattern="^[0-9]+$"/>
-        <NODE name="hours" help="hours" pattern="^[0-9]+$"/>
-        <NODE name="minutes" help="minutes" pattern="^[0-9]+$"/>
-        <NODE name="seconds" help="seconds" pattern="^[0-9]+$"/>
+        <NODE name="days" mode="r" help="days" pattern="^[0-9]+$"/>
+        <NODE name="hours" mode="r" help="hours" pattern="^[0-9]+$"/>
+        <NODE name="minutes" mode="r" help="minutes" pattern="^[0-9]+$"/>
+        <NODE name="seconds" mode="r" help="seconds" pattern="^[0-9]+$"/>
       </NODE>
     </NODE>
     <NODE name="animals">
