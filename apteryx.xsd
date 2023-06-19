@@ -36,6 +36,7 @@
 			</xs:attribute>
 			<xs:attribute name="default" type="xs:string" use="optional" />
 			<xs:attribute name="pattern" type="xs:string" use="optional" />
+			<xs:attribute name="range" type="xs:string" use="optional" />
 			<xs:attribute name="help" type="xs:string" use="optional" />
 			<xs:attribute name="mode" use="optional">
 				<xs:simpleType>

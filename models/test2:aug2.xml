@@ -7,7 +7,7 @@
         model="testing2-augmented" organization="Test 2 Ltd" version="2023-02-02">
   <t2:NODE name="test" help="This is a test node">
     <t2:NODE name="settings" help="Settings">
-      <NODE name="speed" mode="rw" help="integer" pattern="^[1-5]$"/>
+      <NODE name="speed" mode="rw" help="int64" range="-9223372036854775808..9223372036854775807"/>
     </t2:NODE>
     <t2:NODE name="state" help="State">
       <aug2:NODE name="speed" mode="r" help="integer"/>

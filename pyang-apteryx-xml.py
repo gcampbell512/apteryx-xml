@@ -369,5 +369,24 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                     if descr is not None:
                         descr.arg = descr.arg.replace('\r', ' ').replace('\n', ' ')
                         value.attrib["help"] = descr.arg
-
+            if ntype.arg in ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]:
+                range = ntype.search_one("range")
+                if range is not None:
+                    res.attrib["range"] = range.arg
+                elif ntype.arg == "int8":
+                    res.attrib["range"] = "-128..127"
+                elif ntype.arg == "int16":
+                    res.attrib["range"] = "-32768..32767"
+                elif ntype.arg == "int32":
+                    res.attrib["range"] = "-2147483648..2147483647"
+                elif ntype.arg == "int64":
+                    res.attrib["range"] = "-9223372036854775808..9223372036854775807"
+                elif ntype.arg == "uint8":
+                    res.attrib["range"] = "0..255"
+                elif ntype.arg == "uint16":
+                    res.attrib["range"] = "0..65535"
+                elif ntype.arg == "uint32":
+                    res.attrib["range"] = "0..4294967295"
+                elif ntype.arg == "uint64":
+                    res.attrib["range"] = "0..18446744073709551615"
         return res, module, path

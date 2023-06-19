@@ -6,7 +6,7 @@
         model="testing" organization="Test Ltd" version="2023-01-01">
   <NODE name="test" help="This is a test node">
     <NODE name="settings" help="Settings">
-      <NODE name="volume" mode="rw" help="integer" pattern="^[1-5]$"/>
+      <NODE name="volume" mode="rw" help="uint64" range="0..18446744073709551615"/>
     </NODE>
     <NODE name="state" help="State">
       <NODE name="volume" mode="r" help="integer"/>

@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include <string.h>
 #include <glib.h>
 #include <dirent.h>
@@ -48,7 +49,7 @@ static __thread char tl_errmsg[BUFSIZ] = {0};
     { \
         tl_error = error; \
         snprintf (tl_errmsg, BUFSIZ - 1, fmt, ## args); \
-        DEBUG (flags, fmt, ## args); \
+        DEBUG (flags, fmt"\n", ## args); \
     }
 
 #define READ_BUF_SIZE 512
@@ -1460,10 +1461,59 @@ sch_translate_from (sch_node * node, char *value)
     return value;
 }
 
+static bool
+parse_integer (int flags, const char *value, bool *neg, uint64_t *vint)
+{
+    char *endptr = NULL;
+
+    *neg = false;
+    if (value[0] == '+' || value[0] == '-')
+    {
+        *neg = (value[0] == '-');
+        value++;
+    }
+    *vint = strtoull (value, &endptr, 10);
+    if ((*vint == ULLONG_MAX && errno == ERANGE) || !endptr || endptr[0] != '\0')
+    {
+        DEBUG (flags, "Failed to parse integer \"%s\"\n", value);
+        return false;
+    }
+    return true;
+}
+
+static bool
+parse_minmax (int flags, char *minmax, bool *min_neg, uint64_t *min, bool *max_neg, uint64_t *max)
+{
+    char *divider;
+    bool rc = true;
+
+    divider = strstr (minmax, "..");
+    if (divider)
+        divider[0] = '\0';
+    if (!parse_integer (flags, minmax, min_neg, min))
+    {
+        rc = false;
+    }
+    if (rc && divider && !parse_integer (flags, divider + 2, max_neg, max))
+    {
+        rc = false;
+    }
+    if (divider)
+        divider[0] = '.';
+    else
+    {
+        *max_neg = *min_neg;
+        *max = *min;
+    }
+    return rc;
+}
+
 bool
 _sch_validate_pattern (sch_node * node, const char *value, int flags)
 {
     xmlNode *xml = (xmlNode *) node;
+    if (!value)
+        return false;
     char *pattern = (char *) xmlGetProp (node, (xmlChar *) "pattern");
     if (pattern)
     {
@@ -1497,10 +1547,57 @@ _sch_validate_pattern (sch_node * node, const char *value, int flags)
         g_free (d_pattern);
         return (rc == 0);
     }
-    else if (xml->children)
+    char *range = (char *) xmlGetProp (node, (xmlChar *) "range");
+    if (range)
+    {
+        bool vint_neg, min_neg, max_neg;
+        uint64_t vint, min, max;
+
+        if (!parse_integer (flags, value, &vint_neg, &vint))
+        {
+            ERROR (flags, SCH_E_OUTOFRANGE, "\"%s\" out of range \"%s\"", value, range);
+            xmlFree (range);
+            return false;
+        }
+
+        char *ptr = NULL;
+        char *minmax = strtok_r (range, "|", &ptr);
+        while (minmax)
+        {
+            if (!parse_minmax (flags, minmax, &min_neg, &min, &max_neg, &max))
+            {
+                ERROR (flags, SCH_E_INTERNAL, "Can't parse minmax \"%s\"", minmax);
+                xmlFree (range);
+                return false;
+            }
+
+            DEBUG (flags, "Checking %s%" PRIu64 " for range %s%" PRIu64 "..%s%" PRIu64 "\n",
+                   vint_neg ? "-" : "", vint,
+                   min_neg ? "-" : "", min,
+                   max_neg ? "-" : "", max);
+
+            bool ok = true;
+            if (vint_neg && !min_neg) ok = false;
+            if (vint_neg && min_neg && vint > min) ok = false;
+            if (!vint_neg && !min_neg && vint < min) ok = false;
+            if (!vint_neg && max_neg) ok = false;
+            if (vint_neg && max_neg && vint < max) ok = false;
+            if (!vint_neg && !max_neg && vint > max) ok = false;
+            if (ok)
+            {
+                xmlFree (range);
+                return true;
+            }
+            minmax = strtok_r (NULL, "|", &ptr);
+        }
+        ERROR (flags, SCH_E_OUTOFRANGE, "\"%s\" out of range \"%s\"", value, range);
+        xmlFree (range);
+        return false;
+    }
+    if (xml->children)
     {
         bool enumeration = false;
-        int rc = false;
+        bool rc = false;
         xmlNode *n;
         char *val;
 
@@ -2756,21 +2853,24 @@ encode_json_type (sch_node *schema, char *val)
     json_int_t i;
     char *p;
 
-    if (*val != '\0')
+    /* Only try and detect non string types if no pattern */
+    if (*val != '\0' && !xmlHasProp ((xmlNode *)schema, (const xmlChar *)"pattern"))
     {
-        /* Only try and detect non string types if no pattern and not enum */
-        char *pattern = (char *) xmlGetProp ((xmlNode *)schema, (xmlChar *) "pattern");
-        if (((xmlNode *)schema)->children || pattern)
+        /* Integers MUST(in XML) have a range property */
+        if (xmlHasProp ((xmlNode *)schema, (const xmlChar *)"range"))
         {
             i = strtoll (val, &p, 10);
             if (*p == '\0')
                 json = json_integer (i);
+        }
+        /* boolean MUST(in xml) be an enum of exactly two entities */
+        if (!json && xmlChildElementCount ((xmlNode *)schema) == 2)
+        {
             if (g_strcmp0 (val, "true") == 0)
                 json = json_true ();
-            if (g_strcmp0 (val, "false") == 0)
+            else if (g_strcmp0 (val, "false") == 0)
                 json = json_false ();
         }
-        free (pattern);
     }
     if (!json)
         json = json_string (val);
