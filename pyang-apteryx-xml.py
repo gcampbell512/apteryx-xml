@@ -153,8 +153,8 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         self.node_handler = {
             "container": self.container,
             "leaf": self.leaf,
-            "choice": self.container,
-            "case": self.container,
+            "choice": self.choice,
+            "case": self.case,
             "list": self.list,
             "leaf-list": self.leaf_list,
         }
@@ -241,6 +241,12 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         if path is None:
             return
         self.process_children(node, nel, newm, path)
+
+    def choice(self, node, elem, module, path):
+        self.process_children(node, elem, module, path)
+
+    def case(self, node, elem, module, path):
+        self.process_children(node, elem, module, path)
 
     def leaf(self, node, elem, module, path):
         ntype = node.search_one("type")

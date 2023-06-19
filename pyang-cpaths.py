@@ -52,6 +52,8 @@ class PathPlugin(plugin.PyangPlugin):
 
 def mk_path_str(s, prefix, level=0, strip=0, fd=None):
     #print('LEVEL: ' + str(level) + ' STRIP:' + str(strip) + ' ' + s.arg)
+    if s.keyword in ['choice', 'case']:
+        return mk_path_str(s.parent, prefix, level, strip)
     if level > strip:
         p = mk_path_str(s.parent, prefix, level - 1, strip)
         if p != "":
@@ -80,6 +82,12 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
 
     # No need to include these nodes
     if node.keyword in ['rpc', 'notification']:
+        return
+
+    # Skip over choice and case
+    if node.keyword in ['choice', 'case']:
+        for child in node.i_children:
+            print_node(child, module, prefix, fd, ctx, level, strip)
         return
 
     # Strip all nodes from the path at list items
