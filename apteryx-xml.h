@@ -94,13 +94,14 @@ typedef enum
     SCH_F_JSON_TYPES            = (1 << 3),  /* Translate to/from json types */
     SCH_F_XPATH                 = (1 << 4),  /* Path is in xpath format */
     SCH_F_CONFIG                = (1 << 5),  /* Format config-only nodes */
-    SCH_F_NS_MODEL_NAME         = (1 << 6),  /* Convert model names to namespaces */
-    SCH_F_STRIP_DATA            = (1 << 7),  /* Strip data values from the tree */
-    SCH_F_DEPTH_ONE             = (1 << 8),  /* Query is a depth one */
-    SCH_F_ADD_DEFAULTS          = (1 << 9),  /* Add all default nodes */
-    SCH_F_TRIM_DEFAULTS         = (1 << 10), /* Remove all nodes set to default values */
-    SCH_F_ADD_MISSING_NULL      = (1 << 11), /* Add missing nodes with NULL values */
-    SCH_F_SET_NULL              = (1 << 12), /* Set all nodes to NULL */
+    SCH_F_NS_PREFIX             = (1 << 6),  /* Prefix model name before node names (on change of ns) */
+    SCH_F_NS_MODEL_NAME         = (1 << 7),  /* Convert model names to namespaces */
+    SCH_F_STRIP_DATA            = (1 << 8),  /* Strip data values from the tree */
+    SCH_F_DEPTH_ONE             = (1 << 9),  /* Query is a depth one */
+    SCH_F_ADD_DEFAULTS          = (1 << 10), /* Add all default nodes */
+    SCH_F_TRIM_DEFAULTS         = (1 << 11), /* Remove all nodes set to default values */
+    SCH_F_ADD_MISSING_NULL      = (1 << 12), /* Add missing nodes with NULL values */
+    SCH_F_SET_NULL              = (1 << 13), /* Set all nodes to NULL */
 } sch_flags;
 GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char * path, int flags, sch_node ** rschema);
 bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags);

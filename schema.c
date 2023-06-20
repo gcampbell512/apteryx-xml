@@ -3115,7 +3115,25 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
             for (GNode * field = child->children; field; field = field->next)
             {
                 json_t *node = _sch_gnode_to_json (instance, sch_node_child_first (schema), ns, field, flags, depth + 1);
-                json_object_set_new (obj, APTERYX_NAME (field), node);
+                bool added = false;
+                if (flags & SCH_F_NS_PREFIX)
+                {
+                    sch_node *cschema = _sch_node_child (((xmlNode *) schema)->ns, sch_node_child_first (schema), APTERYX_NAME (field));
+                    if (cschema && ((xmlNode *) cschema)->ns != ((xmlNode *) schema)->ns)
+                    {
+                        char * model = sch_model (cschema, false);
+                        if (model)
+                        {
+                            char *pname = g_strdup_printf ("%s:%s", model, APTERYX_NAME (field));
+                            json_object_set_new (obj, pname, node);
+                            free (pname);
+                            free (model);
+                            added = true;
+                        }
+                    }
+                }
+                if (!added)
+                    json_object_set_new (obj, APTERYX_NAME (field), node);
             }
             json_array_append_new (data, obj);
         }
@@ -3128,7 +3146,25 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
         for (GNode * child = node->children; child; child = child->next)
         {
             json_t *node = _sch_gnode_to_json (instance, schema, ns, child, flags, depth + 1);
-            json_object_set_new (data, APTERYX_NAME (child), node);
+            bool added = false;
+            if (flags & SCH_F_NS_PREFIX)
+            {
+                sch_node *cschema = _sch_node_child (ns, schema, APTERYX_NAME (child));
+                if (cschema && ((xmlNode *) cschema)->ns != ((xmlNode *) schema)->ns)
+                {
+                    char * model = sch_model (cschema, false);
+                    if (model)
+                    {
+                        char *pname = g_strdup_printf ("%s:%s", model, APTERYX_NAME (child));
+                        json_object_set_new (data, pname, node);
+                        free (pname);
+                        free (model);
+                        added = true;
+                    }
+                }
+            }
+            if (!added)
+                json_object_set_new (data, APTERYX_NAME (child), node);
         }
         if (json_object_iter (data) == NULL)
         {
@@ -3178,6 +3214,18 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
         else
         {
             name = APTERYX_NAME (node);
+        }
+        if ((flags & SCH_F_NS_PREFIX) && schema)
+        {
+            char * model = sch_model (schema, false);
+            if (model)
+            {
+                name = g_strdup_printf ("%s:%s", model, name);
+                json = json_object ();
+                json_object_set_new (json, name, child);
+                free (name);
+                free (model);
+            }
         }
         if (!json)
         {
