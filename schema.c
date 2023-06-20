@@ -3157,39 +3157,30 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
 json_t *
 sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
-    xmlNs *ns = schema ? ((xmlNode *) schema)->ns : NULL;
+    sch_node *pschema = schema ? ((xmlNode *)schema)->parent : xmlDocGetRootElement (instance->doc);
+    xmlNs *ns = schema ? ((xmlNode *) schema)->ns : ((xmlNode *) pschema)->ns;
     json_t *json = NULL;
     json_t *child;
 
     tl_error = SCH_E_SUCCESS;
-    if (schema)
+    child = _sch_gnode_to_json (instance, pschema, ns, node, flags, g_node_depth (node) - 1);
+    if (child)
     {
-        schema = ((xmlNode *)schema)->parent;
-        child = _sch_gnode_to_json (instance, schema, ns, node, flags, g_node_max_height (node));
-        if (child)
+        char *name;
+        if (strlen (APTERYX_NAME (node)) == 1)
         {
-            json = json_object ();
-            json_object_set_new (json, APTERYX_NAME (node), child);
+            return child;
         }
-    }
-    else
-    {
-        child = _sch_gnode_to_json (instance, schema, ns, node, flags, 0);
-        if (child)
+        else if (APTERYX_NAME (node)[0] == '/')
         {
-            char *name;
-            if (strlen (APTERYX_NAME (node)) == 1)
-            {
-                return child;
-            }
-            else if (APTERYX_NAME (node)[0] == '/')
-            {
-                name = APTERYX_NAME (node) + 1;
-            }
-            else
-            {
-                name = APTERYX_NAME (node);
-            }
+            name = APTERYX_NAME (node) + 1;
+        }
+        else
+        {
+            name = APTERYX_NAME (node);
+        }
+        if (!json)
+        {
             json = json_object ();
             json_object_set_new (json, name, child);
         }
