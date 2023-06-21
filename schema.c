@@ -3097,8 +3097,22 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
         DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_VALUE (node));
         for (GNode * child = node->children; child; child = child->next)
         {
-            DEBUG (flags, "%s%s", APTERYX_VALUE (child), child->next ? ", " : "");
-            json_array_append_new (data, json_string ((const char* ) APTERYX_VALUE (child)));
+            bool added = false;
+            if (flags & SCH_F_JSON_TYPES)
+            {
+                sch_node *cschema = sch_node_child_first (schema);
+                char *value = g_strdup (APTERYX_VALUE (child) ?: "");
+                value = sch_translate_to (cschema, value);
+                json_array_append_new (data, encode_json_type (cschema, value));
+                DEBUG (flags, "%s%s", value, child->next ? ", " : "");
+                free (value);
+                added = true;
+            }
+            if (!added)
+            {
+                DEBUG (flags, "%s%s", APTERYX_VALUE (child), child->next ? ", " : "");
+                json_array_append_new (data, json_string ((const char* ) APTERYX_VALUE (child)));
+            }
         }
         DEBUG (flags, "]\n");
     }

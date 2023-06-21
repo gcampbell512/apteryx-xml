@@ -42,6 +42,9 @@
             <VALUE name="true" value="true"/>
             <VALUE name="false" value="false"/>
           </NODE>
+          <NODE name="groups" help="This is a leaf list of integers">
+            <NODE name="*" mode="rw" help="Member of group" range="1..9"/>
+          </NODE>
         </NODE>
       </NODE>
     </NODE>
