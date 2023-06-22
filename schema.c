@@ -2522,7 +2522,7 @@ _perform_actions (_sch_xml_to_gnode_parms *_parms, char *curr_op, char *new_op, 
 
 static GNode *
 _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns, char * part_xpath,
-                   char * curr_op, GNode * pparent, xmlNode * xml, int depth)
+                   char * curr_op, GNode * pparent, xmlNode * xml, int depth, sch_node **rschema)
 {
     sch_instance *instance = _parms->in_instance;
     int flags = _parms->in_flags;
@@ -2555,6 +2555,8 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
         _parms->out_error_tag = "malformed-message";
         return NULL;
     }
+    if (rschema)
+        *rschema = schema;
 
     /* Prepend non default namespaces to root nodes */
     if (depth == 0 && ns && ns->prefix && !sch_ns_native (instance, ns))
@@ -2613,6 +2615,9 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
             key_value = g_strdup ("*");
         }
         schema = sch_node_child_first (schema);
+        if (rschema)
+            *rschema = schema;
+
         new_xpath = g_strdup_printf ("%s/%s", old_xpath, key_value);
         g_free (old_xpath);
         g_free (key_value);
@@ -2686,7 +2691,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
         }
         else
         {
-            GNode *cn = _sch_xml_to_gnode (_parms, schema, ns, new_xpath, new_op, NULL, child, depth + 1);
+            GNode *cn = _sch_xml_to_gnode (_parms, schema, ns, new_xpath, new_op, NULL, child, depth + 1, rschema);
             if (_parms->out_error_tag)
             {
                 apteryx_free_tree (tree);
@@ -2735,11 +2740,13 @@ sch_parms_init (sch_instance * instance, int flags, char * def_op, bool is_edit)
 }
 
 GNode *
-sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags, char * def_op, bool is_edit)
+sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags,
+                  char * def_op, bool is_edit, sch_node **rschema)
 {
     _sch_xml_to_gnode_parms *_parms = sch_parms_init(instance, flags, def_op, is_edit);
     tl_error = SCH_E_SUCCESS;
-    _parms->out_tree = _sch_xml_to_gnode (_parms, schema, NULL, "", def_op, NULL, xml, 0);
+    _parms->out_tree = _sch_xml_to_gnode (_parms, schema, NULL, "", def_op, NULL, xml, 0,
+                                          rschema);
     return (sch_xml_to_gnode_parms) _parms;
 }
 
@@ -2913,7 +2920,7 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
                 child->children->data = g_strdup ("");
             }
         }
-        else if (flags & SCH_F_ADD_DEFAULTS)
+        else if ((flags & SCH_F_ADD_DEFAULTS))
         {
             /* We do not need to do anything at all if this leaf does not have a default */
             char *value = sch_translate_from (schema, sch_default_value (schema));
@@ -2942,16 +2949,20 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
                 free (value);
             }
         }
-        else if (child && flags & SCH_F_TRIM_DEFAULTS)
+        else if (child && (flags & SCH_F_TRIM_DEFAULTS))
         {
             char *value = sch_translate_from (schema, sch_default_value (schema));
-            if (g_strcmp0 (APTERYX_VALUE (child), value) == 0)
+            if (value)
             {
-                free ((void *)child->children->data);
-                free ((void *)child->data);
-                g_node_destroy (child);
+                if (g_strcmp0 (APTERYX_VALUE (child), value) == 0)
+                {
+                    free ((void *)child->children->data);
+                    free ((void *)child->data);
+                    g_node_destroy (child);
+                    child = NULL;
+                }
+                free (value);
             }
-            free (value);
         }
     }
     else if (g_strcmp0 (name, "*") == 0)
@@ -2979,7 +2990,7 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
     }
     else
     {
-        if (!child && !sch_is_list (schema) && (flags & (SCH_F_ADD_DEFAULTS|SCH_F_ADD_MISSING_NULL)))
+        if (!child && !sch_is_list (schema) && (flags & (SCH_F_ADD_DEFAULTS|SCH_F_TRIM_DEFAULTS|SCH_F_ADD_MISSING_NULL)))
         {
             child = APTERYX_NODE (parent, name);
             name = NULL;

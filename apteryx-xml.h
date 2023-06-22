@@ -110,7 +110,9 @@ GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char
 #ifdef APTERYX_XML_LIBXML2
 #include <libxml/tree.h>
 xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags);
-sch_xml_to_gnode_parms sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags, char * def_op, bool is_edit);
+sch_xml_to_gnode_parms sch_xml_to_gnode (sch_instance * instance, sch_node * schema,
+                                         xmlNode * xml, int flags, char * def_op,
+                                         bool is_edit, sch_node **rschema);
 GNode *sch_parm_tree (sch_xml_to_gnode_parms parms);
 char *sch_parm_error_tag (sch_xml_to_gnode_parms parms);
 GList *sch_parm_deletes (sch_xml_to_gnode_parms parms);
