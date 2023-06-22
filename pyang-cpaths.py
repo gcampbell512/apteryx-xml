@@ -3,12 +3,9 @@
 Output paths in C header file format
 
 """
-import os.path
-import re
-import sys
 import optparse
 
-from pyang import error, plugin, statements
+from pyang import plugin, statements
 
 
 def pyang_plugin_init():
@@ -51,7 +48,7 @@ class PathPlugin(plugin.PyangPlugin):
 
 
 def mk_path_str(s, prefix, level=0, strip=0, fd=None):
-    #print('LEVEL: ' + str(level) + ' STRIP:' + str(strip) + ' ' + s.arg)
+    # print('LEVEL: ' + str(level) + ' STRIP:' + str(strip) + ' ' + s.arg)
     if s.keyword in ['choice', 'case']:
         return mk_path_str(s.parent, prefix, level, strip)
     if level > strip:
@@ -78,7 +75,7 @@ def mk_path_str_define(s, prefix, level):
 
 
 def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
-    #print('TYPE:' + node.keyword + 'LEVEL:' + str(level) + 'STRIP:' + str(strip))
+    # print('TYPE:' + node.keyword + 'LEVEL:' + str(level) + 'STRIP:' + str(strip))
 
     # No need to include these nodes
     if node.keyword in ['rpc', 'notification']:
@@ -147,17 +144,18 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
         if ntype.arg == 'enumeration':
             count = 0
             for enum in ntype.substmts:
+                name = enum.arg.replace('-', '_').upper()
                 val = enum.search_one('value')
                 if val is not None:
-                    fd.write('#define ' + define + '_' + enum.arg.replace('-', '_').upper() + ' ' + str(val.arg) + '\n')
+                    fd.write('#define ' + define + '_' + name + ' ' + str(val.arg) + '\n')
                     try:
                         val_int = int(val.arg)
-                    except:
+                    except ValueError:
                         val_int = None
                     if val_int is not None:
                         count = val_int
                 else:
-                    fd.write('#define ' + define + '_' + enum.arg.replace('-', '_').upper() + ' ' + str(count) + '\n')
+                    fd.write('#define ' + define + '_' + name + ' ' + str(count) + '\n')
                 count = count + 1
 
     # Default value

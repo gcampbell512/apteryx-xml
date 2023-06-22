@@ -163,7 +163,8 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         # Create the root node
         root = etree.Element("MODULE")
         root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
-        root.set("xsi:schemaLocation", "https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd")
+        root.set("xsi:schemaLocation", "https://github.com/alliedtelesis/apteryx-xml "
+                 "https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd")
         root.set("model", module.arg)
         namespace = module.search_one('namespace')
         if namespace is not None:
@@ -361,7 +362,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                         value.attrib["value"] = val.arg
                         try:
                             val_int = int(val.arg)
-                        except:
+                        except ValueError:
                             val_int = None
                         if val_int is not None:
                             count = val_int
@@ -375,7 +376,8 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                     if descr is not None:
                         descr.arg = descr.arg.replace('\r', ' ').replace('\n', ' ')
                         value.attrib["help"] = descr.arg
-            if ntype.arg in ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]:
+            if ntype.arg in ["int8", "int16", "int32", "int64",
+                             "uint8", "uint16", "uint32", "uint64"]:
                 range = ntype.search_one("range")
                 if range is not None:
                     res.attrib["range"] = range.arg
