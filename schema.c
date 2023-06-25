@@ -727,6 +727,10 @@ remove_hidden_children (xmlNode *node)
     if (node->name[0] == 'V')
         return true;
 
+    /* Throw away any non schema nodes */
+    if (node->name[0] != 'M' && node->name[0] != 'N')
+        return false;
+
     if (sch_is_hidden (node))
         return false;
 
