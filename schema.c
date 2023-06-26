@@ -3010,8 +3010,9 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
         }
     }
 
-    /* Prune empty branches */
-    if (child && !child->children && !sch_is_leaf (schema))
+    /* Prune empty branches (unless it's a presence container) */
+    if (child && !child->children && !sch_is_leaf (schema) &&
+        ((((xmlNode *)schema)->children) || (flags & SCH_F_TRIM_DEFAULTS)))
     {
         DEBUG (flags, "Throwing away node \"%s\"\n", APTERYX_NAME (child));
         free ((void *)child->data);
