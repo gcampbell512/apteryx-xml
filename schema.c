@@ -3195,7 +3195,8 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
             if (!added)
                 json_object_set_new (data, APTERYX_NAME (child), node);
         }
-        if (json_object_iter (data) == NULL)
+        /* Throw away this node if no chldren (unless it's a presence container) */
+        if (json_object_iter (data) == NULL && ((xmlNode *)schema)->children)
         {
             json_decref (data);
             data = NULL;
