@@ -2268,6 +2268,7 @@ static xmlNode *
 _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNode * parent,
                    GNode * node, int flags, int depth)
 {
+    sch_node *pschema = schema;
     xmlNode *data = NULL;
     char *colon = NULL;
     char *name;
@@ -2393,6 +2394,14 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
             DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), value);
             free (value);
         }
+    }
+
+    /* Record any changes to the namespace (including the root node) */
+    if (data && schema && (!pschema || ((xmlNode *)pschema)->ns != ((xmlNode *)schema)->ns))
+    {
+        /* Dont store a prefix as we set the default xmlns at each node */
+        xmlNsPtr nns = xmlNewNs (data, ((xmlNode *)schema)->ns->href, NULL);
+        xmlSetNs (data, nns);
     }
 
     free (name);
