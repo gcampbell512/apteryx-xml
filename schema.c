@@ -3119,7 +3119,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
         data = json_array ();
         apteryx_sort_children (node, g_strcmp0);
 
-        DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_VALUE (node));
+        DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_NAME (node));
         for (GNode * child = node->children; child; child = child->next)
         {
             bool added = false;
@@ -3323,8 +3323,21 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
         schema = sch_node_child_first (schema);
         json_array_foreach (json, index, child)
         {
-            APTERYX_LEAF_STRING (tree, json_string_value (child), json_string_value (child));
-            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", json_string_value (child), json_string_value (child));
+            value = decode_json_type (child);
+            if (value && value[0] != '\0' && flags & SCH_F_JSON_TYPES)
+            {
+                value = sch_translate_from (schema, value);
+                if (!_sch_validate_pattern (schema, value, flags))
+                {
+                    DEBUG (flags, "Invalid value \"%s\" for node \"%s\"\n", value, name);
+                    free (value);
+                    apteryx_free_tree (tree);
+                    return NULL;
+                }
+            }
+            APTERYX_LEAF_STRING (tree, value, value);
+            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", value, value);
+            free (value);
         }
     }
     /* LIST */
