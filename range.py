@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+# RobertKimble:
+# This is my answer to the challenge. It doesn't always find the shortest
+# expression, but it works pretty well. Let me know if you find any bugs.
+# If the original author wants to blow this away and go back, feel free.
+# I'm not trying to rain on anybody's parade.
+
+# There are a couple differences. I don't care in which order the inputs are
+# given. They can be longs of any length (within reason). I assume the inputs
+# are numbers. The expression I output allows for leading zeros. Not a big
+# deal really, but that's the way I designed it.
+
+# I have added a parse tree class to help factor out common prefixes. It's
+# somewhat broken, so I have put its use into a try/except block. I'll work
+# on fixing it when I have time.
+#
+# NOTE:
+# This code was taken from http://utilitymill.com/edit/Regex_For_Range -
+# all code submitted there is done so under GPL
+import sys
+
+
+def regex_for_range(start, end, verbose=False):
+
+    import re
+
+    class rfr_tree(object):
+        '''Holds set of patterns in a tree in order to factor out common prefixes.'''
+
+        def __init__(self, key, patterns):
+            '''Recursively builds the parse tree.'''
+            self.node = key
+            self.branches = []
+            if 0 == len(patterns):
+                return
+            if 1 == len(patterns):
+                pattern = patterns[0]
+                if pattern:
+                    root = pattern[0]
+                    if pattern[1:]:
+                        self.branches = [rfr_tree(root, [pattern[1:]])]
+                    else:
+                        self.branches = [rfr_tree(root, [])]
+                return
+            # The recursive part:
+            roots = []
+            for p in patterns:
+                if p:
+                    h = p[0]
+                    if h not in roots:
+                        roots.append(h)
+                else:
+                    self.branches.append(rfr_tree('', []))
+            #roots = sorted(set(self.get_head(p) for p in patterns if p))
+            for root in roots:
+                branch = rfr_tree(root, [p[1:] for p in patterns
+                    if p and root == p[0]])
+                self.branches.append(branch)
+
+        def collapse(self):
+            '''Collapses the parsed tree into a compact regex.'''
+            if 0 == len(self.branches):
+                return self.node
+            if 1 == len(self.branches):
+                return self.node + self.branches[0].collapse()
+            b = [branch.collapse() for branch in self.branches]
+            if '' in b:
+                b.remove('')
+                if 1 == len(b):
+                    b0 = b[0]
+                    if 1 == len(b0) or (len(b0) <= 5 and b0.startswith('[')
+                        and b0.endswith(']')):
+                        return self.node + b0 + '?'
+                return self.node + '(' + '|'.join(b) + ')?'
+            return self.node + '(' + '|'.join(b) + ')'
+
+        def to_grid(self):
+            grid = []
+            node = self.node
+            if not node:
+                node = '.'
+            if self.branches:
+                for branch in self.branches:
+                    for g in branch.to_grid():
+                        grid.append([node] + g)
+                return grid
+            else:
+                return [[node]]
+
+        def print_tree(self):
+            print('Parse into tree based on regex prefixes:')
+            grid = self.to_grid()
+            for i, row in enumerate(grid):
+                if 0 == i:
+                    out_row = row
+                else:
+                    out_row = list(row)
+                    m = -1
+                    for j in range(min(len(row), len(prev_row))):
+                        if row[j] == prev_row[j]:
+                            m = j
+                            out_row[j] = ' ' * len(row[j])
+                            spacer[j] = ('|' + spacer[j])[:-1]
+                    if 0 <= m:
+                        out_row[m] = ('+' + '-' * len(out_row[m]))[:-1]
+                    #print ' '.join(spacer)
+                print (' {}'.format(' '.join(out_row)))
+                # Save a pointer for the next row's use:
+                prev_row = row
+                # Create a spacer row for the next row:
+                spacer = [' ' * len(x) for x in row]
+            print()
+
+
+    def break_into_ranges_1(start, end):
+        '''Breaks the input range into discrete set of equal length ranges.'''
+        # Turn the inputs into longs:
+        start = int(start)
+        end = int(end)
+        if len(str(start)) == len(str(end)):
+            return [(str(start), str(end))]
+        break_point = 10 ** len(str(start)) - 1
+        return [(str(start), str(break_point))] + break_into_ranges_1(
+            1 + break_point, end)
+
+
+    def fix_pair(pair):
+        '''Prepends 0's as necessary to first member to make it have the same
+           length as the second.'''
+        start, end = pair
+        return (start.rjust(len(end), '0'), end)
+
+
+    def str_bp(break_point):
+        '''Returns break_point and break_point + 1 as equal length strings.'''
+        return fix_pair((str(break_point), str(break_point + 1)))
+
+
+    def break_into_ranges_2(start, end):
+        '''Does the grunt work of breaking the range into parts that can
+           readily be turned into regex'.'''
+        if 1 == len(start):
+            return [(start, end)]
+        if '0' * len(start) == '0' + start[1:]:
+            if '9' * len(end) == '9' + end[1:]:
+                return [(start, end)]
+            if start[0] < end[0]:
+                break_point = int(end[0] + '0' * len(end[1:])) - 1
+                bp, bp1 = str_bp(break_point)
+                return [(start, bp)] + break_into_ranges_2(bp1, end)
+        if '9' * len(end) == '9' + end[1:]:
+            if start[0] < end[0]:
+                break_digit = str(1 + int(start[0]))
+                break_point = int(break_digit + '0' * len(end[1:])) - 1
+                bp, bp1 = str_bp(break_point)
+                return break_into_ranges_2(start, bp) + [(bp1, end)]
+        if start[0] < end[0]:
+            break_digit = str(1 + int(start[0]))
+            break_point = int(break_digit + '0' * len(end[1:])) - 1
+            bp, bp1 = str_bp(break_point)
+            return break_into_ranges_2(start, bp) + break_into_ranges_2(bp1, end)
+        digit = start[0]
+        bir2 = break_into_ranges_2(start[1:], end[1:])
+        return [(digit + s, digit + e) for (s, e) in bir2]
+
+
+    def break_into_ranges(start, end):
+        '''Combines break_into_ranges_1 and break_into_ranges_2.'''
+        bir = []
+        if verbose:
+            print('First, break into equal length ranges:')
+        bir1 = []
+        for s, e in break_into_ranges_1(start, end):
+            bir1.append((s, e))
+            bir.extend(break_into_ranges_2(s, e))
+        if verbose:
+            for s, e in bir1:
+                print(' {}-{}'.format(s, e))
+            print()
+            print('Second, break into ranges that yield simple regexes:')
+            for s, e in bir:
+                print(' {}-{}'.format(s, e))
+            print()
+        return bir
+
+    # To allow for testing:
+    globals()['break_into_ranges'] = break_into_ranges
+
+
+    def individual_regex(start, end):
+        '''Computes one compact regex representing the range indicated.'''
+        p = ''
+        for i in range(len(start)):
+            if start[i] == end[i]:
+                p += start[i]
+            elif 1 + int(start[i]) == int(end[i]):
+                p += '[%s%s]' % (start[i], end[i])
+            else:
+                p += '[%s-%s]' % (start[i], end[i])
+        return shrink(p, len(end))
+
+
+    def ranges_to_regexes(ranges):
+        '''Builds a list of the individual regexes.'''
+        return [individual_regex(s, e) for s, e in ranges]
+
+
+    def range_to_regexes(start, end):
+        '''Wrapper function for ranges_to_regexes.'''
+        s1, e1 = int(start), int(end)
+        if s1 > e1:
+            s1, e1 = e1, s1
+        s1, e1 = str(s1), str(e1)
+        r = ranges_to_regexes(break_into_ranges(s1, e1))
+        if verbose:
+            print('Turn each range into a regex:')
+            for rgx in r:
+                print(' {}'.format(rgx))
+            print()
+        return r
+
+
+    def collapse_powers_of_10(regexes):
+        '''Collapses the powers of 10 into one compact range.'''
+        regexes = list(regexes) # Get a new list
+        regexes.append('') # Append an empty string to make life easier.
+        regexes2 = [] # What we're going to output.
+        # Used to track where the powers of 10 part starts:
+        p10start = -1
+        # Used to track where the powers of 10 part ends:
+        p10end = -1
+        # Whether or not the range we're collapsing starts with 0:
+        starts_with_0 = False
+        for regex in regexes:
+            if '[0-9]' == regex: # This is the only way the 0 case can happen.
+                p10start = 0
+                p10end = 0
+                starts_with_0 = True
+                regex = ''
+            elif '[1-9]' == regex:
+                p10start = 0
+                p10end = 0
+                regex = ''
+            elif '[1-9][0-9]' == regex:
+                if p10start < 0:
+                    p10start = 1
+                p10end = 1
+                regex = ''
+            elif regex.startswith('[1-9][0-9]{'): # Remember, these have been shrunk.
+                n = int(regex[len('[1-9][0-9]{'):-1])
+                if p10start < 0:
+                    p10start = n
+                p10end = n
+                regex = ''
+            elif 0 <= p10start: # If we get here, we've run out of powers of 10.
+                if starts_with_0:
+                    newregex = '[0-9]'
+                    if 1 <= p10end:
+                        newregex += '{1,%d}' % (1 + p10end,)
+                else:
+                    newregex = '[1-9]'
+                    if 1 <= p10end:
+                        newregex += '[0-9]'
+                    if 0 == p10start and 1 == p10end:
+                        newregex += '?'
+                    elif p10start == p10end and 1 < p10start:
+                        newregex += '{%d}' % (p10start,)
+                    elif p10start < p10end:
+                        newregex += '{%d,%d}' % (p10start, p10end)
+                p10start = -1
+                p10end = -1
+                regexes2.append(newregex)
+            if regex:
+                regexes2.append(regex)
+        if verbose:
+            print('Collapse adjacent powers of 10:')
+            for rgx in regexes2:
+                print(' {}'.format(rgx))
+            print()
+        return regexes2
+
+
+    def tokenize(r):
+        '''Tokenizes a regex into a list of tokens.'''
+        tokens = [] # Start a list:
+        if r:
+            reToken = re.compile(r'(\d|\[[^\]]*\])(\?|\{[^}]*\})?')
+            token = reToken.match(r).group(0)
+            tokens.append(token)
+            tokens.extend(tokenize(r[len(token):]))
+        return tokens
+
+
+    def rfr(start, end, verbose=False):
+        '''Computes the regex from the ranges supplied by break_into_ranges.'''
+        start = str(start)
+        end = str(end)
+        r = range_to_regexes(start, end)
+        c = collapse_powers_of_10(r)
+        if 1 == len(c):
+            return lead_zeros + c[0]
+        s = lead_zeros + r'(' + '|'.join(c) + r')'
+        if '|' in s:
+            if verbose:
+                print('Combining the regexes above yields:')
+                print(' {}'.format(s))
+                print()
+                print('''Next we'll try factoring out common prefixes using a tree:''')
+            # Try using rfr_tree to factor out common prefixes.
+            try:
+                # This is totally cheesy, because the exception shouldn't happen.
+                t = [tokenize(rgx) for rgx in c]
+                t2 = rfr_tree('', t)
+                if verbose:
+                    t2.print_tree()
+                s2 = lead_zeros + t2.collapse()
+                if len(s2) < len(s):
+                    # Only use if it's actually shorter.
+                    s = s2
+                if verbose:
+                    print('Turning the parse tree into a regex yields:')
+                    print(' '.format(s2))
+                    print()
+                    print('We choose the shorter one as our result.')
+                    print()
+            except:
+                if verbose:
+                    print(' Uh-oh -- problem creating parse tree.')
+                    print()
+                pass
+        return s
+
+
+    def shrink(regex, maxlen):
+        '''Looks for cheap ways to shrink the regex.'''
+        for i in range(maxlen, 1, -1):
+            regex = regex.replace('[0-9]' * i, '[0-9]{%d}' % i)
+        return regex
+
+    return rfr(start, end, verbose)
+
+lead_zeros=""
+
+class RegexForRange():
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+
+    def __repr__(self):
+        """
+        This function is different to the original from utilitymill.com.
+        It has been modified to ensure that the resulting regular expressions
+        do not match leading zeros or "-0". Also, ensure that the whole thing
+        is surrounded in brackets.
+        """
+        regex = ""
+        if self.start > self.end:
+            raise AssertionError("")
+
+        if self.start > 0:
+            return "" + regex_for_range(self.start, self.end, False)
+        elif self.start == 0 and self.end > 0:
+            return "(0|" + regex_for_range(1, self.end, False) + ")"
+        elif self.start == 0 and self.end == 0:
+            return "0"
+        elif self.start < 0 and self.end == 0:
+            return "(0|-" + regex_for_range(1, -self.start, False) + ")"
+        elif self.start < 0 and self.end < 0:
+            return "(-" + regex_for_range(-self.end, -self.start, False) + ")"
+        elif self.start < 0 and self.end > 0:
+            return "(-" + regex_for_range(1, -self.start, False) + "|0|" + regex_for_range(1, self.end, False) + ")"
+        else:
+            raise AssertionError("")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print("Usage: range.py <start> <end>")
+    else:
+        print(RegexForRange(int(sys.argv[1]), int(sys.argv[2])))

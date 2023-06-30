@@ -376,8 +376,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                     if descr is not None:
                         descr.arg = descr.arg.replace('\r', ' ').replace('\n', ' ')
                         value.attrib["help"] = descr.arg
-            if ntype.arg in ["int8", "int16", "int32", "int64",
-                             "uint8", "uint16", "uint32", "uint64"]:
+            if ntype.arg in ["int8", "int16", "int32", "int64", "uint8", "uint16"]:
                 range = ntype.search_one("range")
                 if range is not None:
                     res.attrib["range"] = range.arg
@@ -387,14 +386,22 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                     res.attrib["range"] = "-32768..32767"
                 elif ntype.arg == "int32":
                     res.attrib["range"] = "-2147483648..2147483647"
-                elif ntype.arg == "int64":
-                    res.attrib["range"] = "-9223372036854775808..9223372036854775807"
                 elif ntype.arg == "uint8":
                     res.attrib["range"] = "0..255"
                 elif ntype.arg == "uint16":
                     res.attrib["range"] = "0..65535"
                 elif ntype.arg == "uint32":
                     res.attrib["range"] = "0..4294967295"
+            if ntype.arg in ["uint32", "uint64"]:
+                # These values are actually encoded as strings
+                range = ntype.search_one("range")
+                if range is not None:
+                    # TODO convert range into a regex pattern
+                    res.attrib["range"] = range.arg
+                elif ntype.arg == "int64":
+                    # range="-9223372036854775808..9223372036854775807"
+                    res.attrib["pattern"] = "(-([0-9]{1,18}|[1-8][0-9]{18}|9([01][0-9]{17}|2([01][0-9]{16}|2([0-2][0-9]{15}|3([0-2][0-9]{14}|3([0-6][0-9]{13}|7([01][0-9]{12}|20([0-2][0-9]{10}|3([0-5][0-9]{9}|6([0-7][0-9]{8}|8([0-4][0-9]{7}|5([0-3][0-9]{6}|4([0-6][0-9]{5}|7([0-6][0-9]{4}|7([0-4][0-9]{3}|5([0-7][0-9]{2}|80[0-8]))))))))))))))))|([0-9]{1,18}|[1-8][0-9]{18}|9([01][0-9]{17}|2([01][0-9]{16}|2([0-2][0-9]{15}|3([0-2][0-9]{14}|3([0-6][0-9]{13}|7([01][0-9]{12}|20([0-2][0-9]{10}|3([0-5][0-9]{9}|6([0-7][0-9]{8}|8([0-4][0-9]{7}|5([0-3][0-9]{6}|4([0-6][0-9]{5}|7([0-6][0-9]{4}|7([0-4][0-9]{3}|5([0-7][0-9]{2}|80[0-7])))))))))))))))))""
                 elif ntype.arg == "uint64":
-                    res.attrib["range"] = "0..18446744073709551615"
+                    # range="0..18446744073709551615"
+                    res.attrib["pattern"] = "([0-9]{1,19}|1([0-7][0-9]{18}|8([0-3][0-9]{17}|4([0-3][0-9]{16}|4([0-5][0-9]{15}|6([0-6][0-9]{14}|7([0-3][0-9]{13}|4([0-3][0-9]{12}|40([0-6][0-9]{10}|7([0-2][0-9]{9}|3([0-6][0-9]{8}|70([0-8][0-9]{6}|9([0-4][0-9]{5}|5([0-4][0-9]{4}|5(0[0-9]{3}|1([0-5][0-9]{2}|6(0[0-9]|1[0-5])))))))))))))))))"
         return res, module, path
