@@ -250,25 +250,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         self.process_children(node, elem, module, path)
 
     def leaf(self, node, elem, module, path):
-        ntype = node.search_one("type")
-        if ntype is not None and ntype.arg in module.i_typedefs:
-            typedef = module.i_typedefs[ntype.arg].copy()
-            typedef.arg = node.arg
-            ndescr = node.search_one('description')
-            if ndescr is not None:
-                tdescr = typedef.search_one('description')
-                if tdescr is None:
-                    typedef.substmts.append(ndescr)
-                else:
-                    tdescr.arg = ndescr.arg
-            typedef.i_config = node.i_config
-            if node.i_default is not None:
-                typedef.i_default = node.i_default
-                typedef.i_default_str = node.i_default_str
-            typedef.keyword = node.keyword
-            nel, newm, path = self.sample_element(typedef, elem, module, path)
-        else:
-            nel, newm, path = self.sample_element(node, elem, module, path)
+        nel, newm, path = self.sample_element(node, elem, module, path)
 
     def list(self, node, elem, module, path):
         nel, newm, path = self.sample_element(node, elem, module, path)
@@ -337,6 +319,8 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 res.attrib["help"] = "List of " + node.arg
 
         ntype = node.search_one("type")
+        if ntype and ntype.i_typedef is not None:
+            ntype = ntype.i_typedef.search_one("type")
         if ntype is not None:
             if ntype.arg == "string":
                 npatt = ntype.search_one("pattern")
