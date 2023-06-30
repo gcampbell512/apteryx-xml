@@ -60,6 +60,7 @@ typedef struct _sch_instance
     GList *models_list;
     GHashTable *map_hash_table;
     GHashTable *model_hash_table;
+    GList *regexes;
 } sch_instance;
 
 typedef struct _sch_xml_to_gnode_parms_s
@@ -660,6 +661,13 @@ sch_free_loaded_models (GList *loaded_models)
     }
 }
 
+static void
+free_regex (regex_t *regex_obj)
+{
+    regfree (regex_obj);
+    g_free (regex_obj);
+}
+
 void
 sch_free (sch_instance * instance)
 {
@@ -673,6 +681,8 @@ sch_free (sch_instance * instance)
             g_hash_table_destroy (instance->map_hash_table);
         if (instance->model_hash_table)
             g_hash_table_destroy (instance->model_hash_table);
+        if (instance->regexes)
+            g_list_free_full (instance->regexes, (GDestroyNotify) free_regex);
         g_free (instance);
     }
 }
@@ -1516,39 +1526,50 @@ bool
 _sch_validate_pattern (sch_node * node, const char *value, int flags)
 {
     xmlNode *xml = (xmlNode *) node;
+    sch_instance *instance = xml ? xml->doc->_private : NULL;
+    char message[100];
+    int rc;
+
     if (!value)
         return false;
-    char *pattern = (char *) xmlGetProp (node, (xmlChar *) "pattern");
-    if (pattern)
+    /* Store compiled regex on the node */
+    if (!xml->_private)
     {
-        char message[100];
-        regex_t regex_obj;
-        int rc;
-        char *d_pattern = g_strdup_printf ("^%s$", pattern);;
-
-        rc = regcomp (&regex_obj, d_pattern, REG_EXTENDED);
-        if (rc != 0)
+        char *pattern = (char *) xmlGetProp (node, (xmlChar *) "pattern");
+        if (pattern)
         {
-            regerror (rc, NULL, message, sizeof (message));
-            ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex %s", rc, message, pattern);
-            xmlFree (pattern);
-            g_free (d_pattern);
-            return false;
-        }
+            char message[100];
+            regex_t *regex_obj = NULL;
+            int rc;
+            char *d_pattern = g_strdup_printf ("^%s$", pattern);
 
-        rc = regexec (&regex_obj, value, 0, NULL, 0);
-        regfree (&regex_obj);
+            regex_obj = g_malloc0 (sizeof (regex_t));
+            rc = regcomp (regex_obj, d_pattern, REG_EXTENDED);
+            if (rc != 0)
+            {
+                regerror (rc, NULL, message, sizeof (message));
+                ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex %s", rc, message, pattern);
+                xmlFree (pattern);
+                g_free (d_pattern);
+                return false;
+            }
+            if (instance)
+                instance->regexes = g_list_prepend (instance->regexes, regex_obj);
+            xml->_private = (void *)regex_obj;
+            g_free (d_pattern);
+            xmlFree (pattern);
+        }
+    }
+    if (xml->_private)
+    {
+        regex_t *regex_obj = (regex_t *)xml->_private;
+        rc = regexec (regex_obj, value, 0, NULL, 0);
         if (rc == REG_ESPACE)
         {
             regerror (rc, NULL, message, sizeof (message));
-            ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex %s", rc, message, pattern);
-            xmlFree (pattern);
-            g_free (d_pattern);
+            ERROR (flags, SCH_E_PATREGEX, "%i (\"%s\") for regex", rc, message);
             return false;
         }
-
-        xmlFree (pattern);
-        g_free (d_pattern);
         return (rc == 0);
     }
     char *range = (char *) xmlGetProp (node, (xmlChar *) "range");
