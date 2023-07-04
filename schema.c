@@ -354,6 +354,20 @@ save_module_info (sch_instance *instance, xmlNode *module)
                 loaded->ns_prefix = g_strdup ((char *) module->ns->prefix);
             }
         }
+        else
+        {
+            xmlChar *nsp = xmlGetProp (module, (xmlChar *) "namespace");
+            xmlChar *pre = xmlGetProp (module, (xmlChar *) "prefix");
+
+            if (nsp)
+            {
+                loaded->ns_href = (char *) nsp;
+            }
+            if (pre)
+            {
+                loaded->ns_prefix = (char *) pre;
+            }
+        }
         if (mod)
         {
             loaded->model = g_strdup ((char *) mod);
@@ -581,7 +595,7 @@ _sch_load (const char *path, const char *model_list_filename)
         xmlNode *module_new = xmlDocGetRootElement (doc_new);
         cleanup_nodes (module_new);
         /* Sanity check for empty modules */
-        if (!module_new || !module_new->children || (module_new->children->name[0] != 'N' && module_new->children->name[0] != 'S'))
+        if (!module_new || (module_new->children && (module_new->children->name[0] != 'N' && module_new->children->name[0] != 'S')))
         {
             syslog (LOG_ERR, "XML: ignoring empty schema \"%s\"", filename);
             continue;
