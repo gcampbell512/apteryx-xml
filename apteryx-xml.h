@@ -55,6 +55,8 @@ sch_instance *sch_load_with_model_list_filename (const char *path,
                                                  const char *model_list_filename);
 void sch_free (sch_instance * instance);
 sch_node *sch_lookup (sch_instance * instance, const char *path);
+char *sch_path_lookup_by_ns (sch_instance * instance, char *href, char *prefix);
+void sch_ns_lookup_by_name (sch_instance * instance, char *top_node, char **href, char **prefix);
 char *sch_dump_xml (sch_instance * instance);
 GList *sch_get_loaded_models (sch_instance * instance);
 

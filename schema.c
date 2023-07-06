@@ -1054,6 +1054,59 @@ sch_lookup (sch_instance * instance, const char *path)
     return lookup_node (instance, NULL, xmlDocGetRootElement (instance->doc), path);
 }
 
+char *
+sch_path_lookup_by_ns (sch_instance * instance, char *href, char *prefix)
+{
+    xmlNode *schema = xmlDocGetRootElement (instance->doc);
+    xmlNode *xml;
+    char *path;
+    char *name;
+
+    xml = sch_node_child_first (schema);
+    while (xml && xml->type == XML_ELEMENT_NODE)
+    {
+        if (xml->ns &&
+            ((href && xml->ns->href && g_strcmp0 ((char *) xml->ns->href, href) == 0) ||
+             (!href && xml->ns->prefix && g_strcmp0 ((char *) xml->ns->prefix, prefix) == 0)))
+        {
+            name = (char *) xmlGetProp (xml, (xmlChar *) "name");
+            path = g_strdup_printf ("/%s:%s", prefix, name);
+            xmlFree (name);
+            return path;
+        }
+        xml = xml->next;
+    }
+    return NULL;
+}
+
+void
+sch_ns_lookup_by_name (sch_instance * instance, char *top_node, char **href, char **prefix)
+{
+    xmlNode *schema = xmlDocGetRootElement (instance->doc);
+    xmlNode *xml;
+    char *name;
+
+    xml = sch_node_child_first (schema);
+    while (xml && xml->type == XML_ELEMENT_NODE)
+    {
+        if (xml->ns && xml->ns->href && xml->ns->prefix)
+        {
+            name = (char *) xmlGetProp (xml, (xmlChar *) "name");
+            if (name && g_strcmp0 (name, top_node) == 0)
+            {
+                xmlFree (name);
+                *href = g_strdup ((char *) xml->ns->href);
+                *prefix = g_strdup ((char *) xml->ns->prefix);
+                return;
+            }
+            xmlFree (name);
+        }
+        xml = xml->next;
+    }
+    *href = NULL;
+    *prefix = NULL;
+}
+
 static sch_node *
 _sch_node_child (xmlNs *ns, sch_node * parent, const char *child)
 {
