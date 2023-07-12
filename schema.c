@@ -1077,6 +1077,88 @@ _sch_node_child (xmlNs *ns, sch_node * parent, const char *child)
     return n;
 }
 
+static bool
+_sch_node_find_name (xmlNs *ns, sch_node * parent, const char *path_name, GList **path_list)
+{
+    xmlNode *xml = (xmlNode *) parent;
+    xmlNode *n = NULL;
+    bool found = false;
+
+    n = xml->children;
+    while (n)
+    {
+        if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
+        {
+            char *name = (char *) xmlGetProp (n, (xmlChar *) "name");
+            if (match_name (name, path_name) && sch_ns_match (n, ns))
+            {
+                xmlFree (name);
+                found = true;
+                break;
+            }
+            if (n->children)
+            {
+                found = _sch_node_find_name (ns, n, path_name, path_list);
+                if (found)
+                {
+                    if (g_strcmp0 (name, "*") != 0)
+                    {
+                        *path_list = g_list_prepend (*path_list, g_strdup (name));
+                    }
+                    xmlFree (name);
+                    break;
+                }
+            }
+            xmlFree (name);
+        }
+        n = n->next;
+    }
+    return found;
+}
+
+static bool
+sch_node_find_name (sch_instance *instance, xmlNs *ns, sch_node *parent, const char *path, int flags, GList **path_list)
+{
+    char *name;
+    char *next;
+    char *colon;
+    bool found = false;
+
+    if (path && path[0] == '/')
+    {
+        path++;
+
+        /* Parse path element */
+        next = strchr (path, '/');
+        if (next)
+            name = g_strndup (path, next - path);
+        else
+            name = g_strdup (path);
+        colon = strchr (name, ':');
+        if (colon)
+        {
+            colon[0] = '\0';
+            xmlNs *nns = sch_lookup_ns (instance, parent, name, flags, false);
+            if (!nns)
+            {
+                /* No namespace found assume the node is supposed to have a colon in it */
+                colon[0] = ':';
+            }
+            else
+            {
+                /* We found a namespace. Remove the prefix */
+                char *_name = name;
+                name = g_strdup (colon + 1);
+                free (_name);
+                ns = nns;
+            }
+        }
+        found = _sch_node_find_name (ns, parent, name, path_list);
+        g_free (name);
+    }
+    return found;
+}
+
 sch_node *
 sch_child_first (sch_instance * instance)
 {
@@ -2014,8 +2096,10 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
     char *query = NULL;
     char *pred = NULL;
     char *equals = NULL;
+    char *new_path = NULL;
     char *colon;
     char *name = NULL;
+    sch_node *last_good_schema = NULL;
 
     if (path && path[0] == '/')
     {
@@ -2077,7 +2161,51 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         /* Find schema node */
         if (!schema || sch_is_proxy (schema))
             schema = xmlDocGetRootElement (instance->doc);
+        last_good_schema = schema;
         schema = _sch_node_child (ns, schema, name);
+        if ((flags & SCH_F_XPATH) && schema == NULL && g_strcmp0 (name, "*") == 0)
+        {
+            GList *path_list = NULL;
+            bool found = sch_node_find_name (instance, ns, last_good_schema, next, flags, &path_list);
+            if (found)
+            {
+                GList *list;
+                int len = 0;
+                bool first = true;
+                for (list = g_list_first (path_list); list; list = g_list_next (list))
+                {
+                    len += strlen ((char *) list->data);
+                }
+
+                if (len)
+                {
+                    /* Note - the 64 bytes added to the length is to allow for extra slashes being added to the path */
+                    len += strlen (path) +  64;
+                    new_path = g_malloc0 (len);
+                    len = 0;
+                    for (list = g_list_first (path_list); list; list = g_list_next (list))
+                    {
+                        if (first)
+                        {
+                            g_free (name);
+                            name = (char *) list->data;
+                            first = false;
+                        }
+                        else
+                        {
+                            len += sprintf (new_path + len, "/%s", (char *) list->data);
+                            g_free (list->data);
+                        }
+                    }
+                    sprintf (new_path + len, "/%s", path);
+                    next = new_path;
+                }
+                g_list_free (path_list);
+                if (new_path)
+                    schema = _sch_node_child (ns, last_good_schema, name);
+            }
+        }
+
         if (schema == NULL)
         {
             ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s%s%s\n", ns ? (char *) ns->prefix : "",
@@ -2152,13 +2280,35 @@ exit:
     if (rschema)
         *rschema = schema;
     free (name);
+    g_free (new_path);
     return rnode;
 }
 
 GNode *
 sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char *path, int flags, sch_node ** rschema)
 {
-    return _sch_path_to_gnode (instance, rschema, NULL, path, flags, 0);
+    GNode *node;
+    char *_path = NULL;
+
+    if ((flags & SCH_F_XPATH))
+    {
+        if (strstr (path, "//"))
+        {
+            GString *gstr;
+
+            /* Translate slash star slash fieldname to slash star slash fieldname */
+            gstr = g_string_new (NULL);
+            g_string_printf (gstr, "%s", path);
+            g_string_replace (gstr, "//", "/*/", 0);
+            _path = gstr->str;
+            path = _path;
+            g_string_free (gstr, false);
+        }
+    }
+    node = _sch_path_to_gnode (instance, rschema, NULL, path, flags, 0);
+    g_free (_path);
+
+    return node;
 }
 
 GNode *
@@ -2382,6 +2532,28 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
             }
             if (has_child)
             {
+                if ((flags & SCH_F_XPATH))
+                {
+                    char *key = sch_list_key (schema);
+                    if (key)
+                    {
+                        xmlNode *n = data->children;
+                        while (n)
+                        {
+                            if (n->type == XML_ELEMENT_NODE && g_strcmp0 (key, (char *) n->name) == 0)
+                                break;
+                            n = n->next;
+                        }
+
+                        if (!n)
+                        {
+                            xmlNode *key_data = xmlNewNode (NULL, BAD_CAST key);
+                            xmlNodeSetContent (key_data, (const xmlChar *) APTERYX_NAME (child));
+                            xmlAddPrevSibling (data->children, key_data);
+                        }
+                        g_free (key);
+                    }
+                }
                 xmlAddChildList (parent, data);
             }
             else
