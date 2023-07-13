@@ -212,11 +212,17 @@ merge_nodes (xmlNs * ns, xmlNode * parent, xmlNode * orig, xmlNode * new, int de
                     {
                         xmlChar *org = xmlGetProp (n, (xmlChar *)"organization");
                         xmlChar *ver = xmlGetProp (n, (xmlChar *)"version");
+                        xmlChar *feat = xmlGetProp (n, (xmlChar *)"features");
+                        xmlChar *devi = xmlGetProp (n, (xmlChar *)"deviations");
                         xmlNewProp (o, (const xmlChar *)"model", mod_n);
                         xmlNewProp (o, (const xmlChar *)"organization", org);
                         xmlNewProp (o, (const xmlChar *)"version", ver);
+                        xmlNewProp (o, (const xmlChar *)"features", feat);
+                        xmlNewProp (o, (const xmlChar *)"deviations", devi);
                         xmlFree (org);
                         xmlFree (ver);
+                        xmlFree (feat);
+                        xmlFree (devi);
                     }
                     else if (g_strcmp0 ((char *) mod_o, (char *) mod_n) != 0)
                     {
@@ -276,7 +282,8 @@ cleanup_nodes (xmlNode * node)
 
 /* Add module organisation and revision to the first child(ren) that matches the namespace */
 static void
-add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *org, xmlChar *ver)
+add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *org,
+                             xmlChar *ver, xmlChar *feat, xmlChar *devi)
 {
     xmlNode *n = node;
     while (n)
@@ -288,11 +295,13 @@ add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *
                 xmlNewProp (n, (const xmlChar *)"model", mod);
                 xmlNewProp (n, (const xmlChar *)"organization", org);
                 xmlNewProp (n, (const xmlChar *)"version", ver);
+                xmlNewProp (n, (const xmlChar *)"features", feat);
+                xmlNewProp (n, (const xmlChar *)"deviations", devi);
             }
         }
         else
         {
-            add_module_info_to_children (n->children, ns, mod, org, ver);
+            add_module_info_to_children (n->children, ns, mod, org, ver, feat, devi);
         }
         n = n->next;
     }
@@ -307,13 +316,19 @@ add_module_info_to_child (sch_instance *instance, xmlNode *module)
     {
         xmlChar *org = xmlGetProp (module, (xmlChar *) "organization");
         xmlChar *ver = xmlGetProp (module, (xmlChar *) "version");
+        xmlChar *feat = xmlGetProp (module, (xmlChar *) "features");
+        xmlChar *devi = xmlGetProp (module, (xmlChar *) "deviations");
         xmlNsPtr def = xmlSearchNs (module->doc, module, NULL);
-        add_module_info_to_children (module->children, def, mod, org, ver);
+        add_module_info_to_children (module->children, def, mod, org, ver, feat, devi);
         xmlFree (mod);
         if (org)
             xmlFree (org);
         if (ver)
             xmlFree (ver);
+        if (feat)
+            xmlFree (feat);
+        if (devi)
+            xmlFree (devi);
     }
 }
 
@@ -324,6 +339,8 @@ save_module_info (sch_instance *instance, xmlNode *module)
     xmlChar *mod = xmlGetProp (module, (xmlChar *) "model");
     xmlChar *org = xmlGetProp (module, (xmlChar *) "organization");
     xmlChar *ver = xmlGetProp (module, (xmlChar *) "version");
+    xmlChar *feat = xmlGetProp (module, (xmlChar *) "features");
+    xmlChar *devi = xmlGetProp (module, (xmlChar *) "deviations");
 
     if (instance->model_hash_table)
     {
@@ -336,6 +353,10 @@ save_module_info (sch_instance *instance, xmlNode *module)
                 xmlFree (org);
             if (ver)
                 xmlFree (ver);
+            if (feat)
+                xmlFree (feat);
+            if (devi)
+                xmlFree (devi);
             return false;
         }
     }
@@ -380,6 +401,14 @@ save_module_info (sch_instance *instance, xmlNode *module)
         {
             loaded->version = g_strdup ((char *) ver);
         }
+        if (feat)
+        {
+            loaded->features = g_strdup ((char *) feat);
+        }
+        if (devi)
+        {
+            loaded->deviations = g_strdup ((char *) devi);
+        }
         instance->models_list = (void *) g_list_append (instance->models_list, loaded);
     }
 
@@ -389,6 +418,10 @@ save_module_info (sch_instance *instance, xmlNode *module)
         xmlFree (org);
     if (ver)
         xmlFree (ver);
+    if (feat)
+        xmlFree (feat);
+    if (devi)
+        xmlFree (devi);
 
     return true;
 }
@@ -667,6 +700,14 @@ sch_free_loaded_models (GList *loaded_models)
             if (loaded->version)
             {
                 g_free (loaded->version);
+            }
+            if (loaded->features)
+            {
+                g_free (loaded->features);
+            }
+            if (loaded->deviations)
+            {
+                g_free (loaded->deviations);
             }
             g_free (loaded);
         }

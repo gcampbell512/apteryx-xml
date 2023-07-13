@@ -5,6 +5,7 @@ Output paths in Apteryx XML file format
 """
 import io
 import sys
+import os
 import optparse
 import xml.etree.ElementTree as etree
 from collections import OrderedDict
@@ -178,6 +179,15 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         rev = module.search_one('revision')
         if rev is not None:
             root.set("version", rev.arg)
+        if ctx.opts.features:
+            features_string = ','.join(ctx.opts.features)
+            root.set("features", features_string)
+        if ctx.opts.deviations:
+            lst = []
+            for x in ctx.opts.deviations:
+                lst.append(os.path.splitext(x)[0])
+            deviations_string = ','.join(lst)
+            root.set("deviations", deviations_string)
 
         # Add any included/imported models
         for m in module.search("include"):

@@ -43,6 +43,8 @@ typedef struct _sch_loaded_model
     char *model;
     char *organization;
     char *version;
+    char *features;
+    char *deviations;
 } sch_loaded_model;
 
 typedef void * sch_xml_to_gnode_parms;
