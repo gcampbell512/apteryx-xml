@@ -2895,7 +2895,12 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
         if (g_strcmp0 (new_op, "delete") != 0 && g_strcmp0 (new_op, "remove") != 0)
         {
             tree = node = APTERYX_NODE (NULL, g_strdup (name));
-            if (xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA))
+            if (!xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA)
+                    && (_parms->in_is_edit))
+            {
+                    node = APTERYX_NODE (tree, NULL);
+            }
+            else if (xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA))
             {
                 char *value = (char *) xmlNodeGetContent (xml);
                 value = sch_translate_from (schema, value);
