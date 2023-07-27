@@ -2783,7 +2783,8 @@ _perform_actions (_sch_xml_to_gnode_parms *_parms, char *curr_op, char *new_op, 
 
 static GNode *
 _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns, char * part_xpath,
-                   char * curr_op, GNode * pparent, xmlNode * xml, int depth, sch_node **rschema)
+                   char * curr_op, GNode * pparent, xmlNode * xml, int depth, sch_node **rschema,
+                   bool *key_in_query)
 {
     sch_instance *instance = _parms->in_instance;
     int flags = _parms->in_flags;
@@ -2903,6 +2904,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
             else if (xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA))
             {
                 char *value = (char *) xmlNodeGetContent (xml);
+                sch_node *sch_parent;
                 value = sch_translate_from (schema, value);
                 if (_parms->in_is_edit && !_sch_validate_pattern (schema, value, _parms->in_flags))
                 {
@@ -2913,8 +2915,43 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
                     tree = NULL;
                     goto exit;
                 }
-                node = APTERYX_NODE (tree, value);
-                DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+
+                /* Test for RFC6241 section 6.2.5 compliance */
+                sch_parent = sch_node_parent (sch_node_parent (schema));
+                if (sch_parent && sch_is_list (sch_parent))
+                {
+                    xmlNode *xml_parent = xml->parent;
+                    xml_parent = xml_parent->parent;
+                    bool key_valid = false;
+                    char * key = sch_name (sch_node_child_first (sch_node_child_first (sch_parent)));
+
+                    if (!key_valid)
+                    {
+                        xml_parent = xml->parent;
+                        for (child = xmlFirstElementChild (xml_parent); child; child = xmlNextElementSibling (child))
+                        {
+                            if (key && g_strcmp0 ((const char *) child->name, key) == 0)
+                            {
+                                key_valid = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (key_valid)
+                    {
+                        node = APTERYX_NODE (tree, value);
+                        DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+                    }
+                    else
+                        g_free (value);
+
+                    g_free (key);
+                }
+                else
+                {
+                    node = APTERYX_NODE (tree, value);
+                    DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+                }
             }
             else
             {
@@ -2931,6 +2968,9 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
         if ((_parms->in_flags & SCH_F_STRIP_KEY) && key &&
             g_strcmp0 ((const char *) child->name, key) == 0)
         {
+            if (key_in_query)
+                *key_in_query = true;
+
             /* The only child is the key with value */
             if (xmlChildElementCount (xml) == 1)
             {
@@ -2957,7 +2997,8 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
         }
         else
         {
-            GNode *cn = _sch_xml_to_gnode (_parms, schema, ns, new_xpath, new_op, NULL, child, depth + 1, rschema);
+            GNode *cn = _sch_xml_to_gnode (_parms, schema, ns, new_xpath, new_op, NULL, child, depth + 1,
+                                           rschema, key_in_query);
             if (_parms->out_error_tag)
             {
                 apteryx_free_tree (tree);
@@ -3007,12 +3048,12 @@ sch_parms_init (sch_instance * instance, int flags, char * def_op, bool is_edit)
 
 GNode *
 sch_xml_to_gnode (sch_instance * instance, sch_node * schema, xmlNode * xml, int flags,
-                  char * def_op, bool is_edit, sch_node **rschema)
+                  char * def_op, bool is_edit, sch_node **rschema, bool *key_in_query)
 {
     _sch_xml_to_gnode_parms *_parms = sch_parms_init(instance, flags, def_op, is_edit);
     tl_error = SCH_E_SUCCESS;
     _parms->out_tree = _sch_xml_to_gnode (_parms, schema, NULL, "", def_op, NULL, xml, 0,
-                                          rschema);
+                                          rschema, key_in_query);
     return (sch_xml_to_gnode_parms) _parms;
 }
 
