@@ -2335,15 +2335,10 @@ sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char *path,
     {
         if (strstr (path, "//"))
         {
-            GString *gstr;
-
-            /* Translate slash star slash fieldname to slash star slash fieldname */
-            gstr = g_string_new (NULL);
-            g_string_printf (gstr, "%s", path);
-            g_string_replace (gstr, "//", "/*/", 0);
-            _path = gstr->str;
+            char **split = g_strsplit (path, "//", -1);
+            _path = g_strjoinv ("/*/", split);
+            g_strfreev (split);
             path = _path;
-            g_string_free (gstr, false);
         }
     }
     node = _sch_path_to_gnode (instance, rschema, NULL, path, flags, 0);
