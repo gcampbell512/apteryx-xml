@@ -2889,16 +2889,29 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     {
         if (g_strcmp0 (new_op, "delete") != 0 && g_strcmp0 (new_op, "remove") != 0)
         {
+            gboolean validate = true;
+            char *value;
+
             tree = node = APTERYX_NODE (NULL, g_strdup (name));
             if (!xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA)
                     && (_parms->in_is_edit))
             {
-                    node = APTERYX_NODE (tree, NULL);
+                value = g_strdup ("");
             }
             else if (xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA))
             {
-                char *value = (char *) xmlNodeGetContent (xml);
+                value = (char *) xmlNodeGetContent (xml);
                 value = sch_translate_from (schema, value);
+            }
+            else
+            {
+                DEBUG (_parms->in_flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+                validate = false;
+            }
+
+            /* Can now validate value, whether or not it is an empty string */
+            if (validate)
+            {
                 if (_parms->in_is_edit && !_sch_validate_pattern (schema, value, _parms->in_flags))
                 {
                     DEBUG (_parms->in_flags, "Invalid value \"%s\" for node \"%s\"\n", value, name);
@@ -2910,10 +2923,6 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
                 }
                 node = APTERYX_NODE (tree, value);
                 DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
-            }
-            else
-            {
-                DEBUG (_parms->in_flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
             }
         }
     }
