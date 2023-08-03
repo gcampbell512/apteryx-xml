@@ -137,7 +137,7 @@ sch_ns_node_equal (xmlNode * a, xmlNode * b)
 {
     char *a_name = NULL;
     char *b_name = NULL;
-    bool ret = FALSE;
+    bool ret = false;
 
     /* Must have matching names */
     a_name = (char *) xmlGetProp (a, (xmlChar *) "name");
@@ -151,7 +151,7 @@ sch_ns_node_equal (xmlNode * a, xmlNode * b)
     if ((a->ns == b->ns) ||
         (a->ns && b->ns && g_strcmp0 ((const char *)a->ns->href, (const char *)b->ns->href) == 0))
     {
-        ret = TRUE;
+        ret = true;
     }
 
 exit:
@@ -772,6 +772,13 @@ match_name (const char *s1, const char *s2)
 static bool
 sch_ns_native (sch_instance *instance, xmlNs *ns)
 {
+    /* No namespace means native */
+    if (!ns)
+        return true;
+    /* Root namespace is considered native */
+    if (instance && ns == xmlDocGetRootElement (instance->doc)->ns)
+        return true;
+    /* Check if namespace is in the table of non-native namespaces */
     if (instance && instance->map_hash_table)
     {
         if (g_hash_table_lookup (instance->map_hash_table, (const char *) ns->href))
@@ -919,33 +926,31 @@ sch_dump_xml (sch_instance * instance)
 static bool
 sch_ns_match (xmlNode *node, xmlNs *ns)
 {
-    sch_instance *instance = node ? node->doc->_private : NULL;
+    sch_instance *instance = node->doc->_private;
 
-    /* Check for native namespace match */
-    if (node && !ns)
-    {
-        if (!node->ns)
-        {
-            xmlChar *name = xmlGetProp (node, (xmlChar *)"name");
-            syslog (LOG_ERR, "XML: NODE \"%s\" missing namespace!", name);
-            xmlFree (name);
-        }
-        if (!node->ns || sch_ns_native (instance, node->ns))
-            return TRUE;
-        return FALSE;
-    }
+    /* Actually the same namespace (object) */
+    if (node->ns == ns)
+        return true;
 
-    /* Check for a namespace uri match */
-    while (node && node->type == XML_ELEMENT_NODE)
+    /* NULL == the global namespace */
+    if (!ns && node->ns == xmlDocGetRootElement (instance->doc)->ns)
+        return true;
+
+    /* Check if both namespaces are part of the global namespace */
+    if (sch_ns_native (instance, ns) && sch_ns_native (instance, node->ns))
+        return true;
+
+    /* Search up the tree until the root<MODULE> for an exact namespace match */
+    while (ns && node && node->type == XML_ELEMENT_NODE && node->name[0] == 'N')
     {
         if (node->ns && node->ns->href &&
             g_strcmp0 ((const char *) node->ns->href, (const char *) ns->href) == 0)
-            return TRUE;
+            return true;
         node = node->parent;
     }
 
     /* No match */
-    return FALSE;
+    return false;
 }
 
 static xmlNs *
