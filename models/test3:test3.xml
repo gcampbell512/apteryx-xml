@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<MODULE xmlns="http://test.com/ns/yang/testing-3"
+        xmlns:t3="http://test.com/ns/yang/testing-3"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd"
+        model="testing-3" organization="Test 3 Ltd" version="2023-03-01">
+  <NODE name="test3" help="This is a test node in the testing-3 namespace">
+    <NODE name="state" help="State">
+      <NODE name="cost" mode="r" help="a string"/>
+    </NODE>
+  </NODE>
+</MODULE>
