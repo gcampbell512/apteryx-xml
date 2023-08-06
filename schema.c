@@ -2993,7 +2993,10 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
                 ERROR (_parms->in_flags, SCH_E_INVALIDQUERY, "recursive call failed: depth=%d\n", depth);
                 goto exit;
             }
-            g_node_append (node, cn);
+            if (cn)
+            {
+                g_node_append (node, cn);
+            }
         }
     }
 
