@@ -70,7 +70,7 @@ typedef struct _sch_xml_to_gnode_parms_s
     char *in_def_op;
     bool in_is_edit;
     GNode *out_tree;
-    char *out_error_tag;
+    nc_error_parms out_error;
     GList *out_deletes;
     GList *out_removes;
     GList *out_creates;
@@ -2727,7 +2727,11 @@ _operation_ok (_sch_xml_to_gnode_parms *_parms, xmlNode *xml, char *curr_op, cha
     {
         if (!_parms->in_is_edit)
         {
-            _parms->out_error_tag = "bad-attribute";
+            _parms->out_error.tag = NC_ERR_TAG_BAD_ATTR;
+            _parms->out_error.type = NC_ERR_TYPE_PROTOCOL;
+            g_hash_table_insert (_parms->out_error.info, "bad-element", "operation");
+            g_hash_table_insert (_parms->out_error.info, "bad-attribute", attr);
+
             return false;
         }
 
@@ -2755,7 +2759,10 @@ _operation_ok (_sch_xml_to_gnode_parms *_parms, xmlNode *xml, char *curr_op, cha
         else
         {
             g_free (attr);
-            _parms->out_error_tag = "bad-attribute";
+            _parms->out_error.tag = NC_ERR_TAG_UNKNOWN_ATTR;
+            _parms->out_error.type = NC_ERR_TYPE_PROTOCOL;
+            g_hash_table_insert (_parms->out_error.info, "bad-element", "operation");
+            g_hash_table_insert (_parms->out_error.info, "bad-attribute", attr);
             return false;
         }
         g_free (attr);
@@ -2765,7 +2772,8 @@ _operation_ok (_sch_xml_to_gnode_parms *_parms, xmlNode *xml, char *curr_op, cha
          */
         if (g_strcmp0 (curr_op, *new_op) != 0 && g_strcmp0 (curr_op, "merge") != 0)
         {
-            _parms->out_error_tag = "operation-not-supported";
+            _parms->out_error.tag = NC_ERR_TAG_OPR_NOT_SUPPORTED;
+            _parms->out_error.type = NC_ERR_TYPE_PROTOCOL;
             return false;
         }
     }
@@ -2832,7 +2840,8 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     {
         ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for xml node %s%s%s\n",
                ns ? (char *) ns->prefix : "", ns ? ":" : "", name);
-        _parms->out_error_tag = "malformed-message";
+        _parms->out_error.tag = NC_ERR_TAG_MALFORMED_MSG;
+        _parms->out_error.type = NC_ERR_TYPE_RPC;
         return NULL;
     }
     if (rschema)
@@ -2941,7 +2950,8 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
                     DEBUG (_parms->in_flags, "Invalid value \"%s\" for node \"%s\"\n", value, name);
                     free (value);
                     apteryx_free_tree (tree);
-                    _parms->out_error_tag = "bad-attribute";
+                    _parms->out_error.tag = NC_ERR_TAG_INVALID_VAL;
+                    _parms->out_error.type = NC_ERR_TYPE_PROTOCOL;
                     tree = NULL;
                     goto exit;
                 }
@@ -2986,7 +2996,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
         else
         {
             GNode *cn = _sch_xml_to_gnode (_parms, schema, ns, new_xpath, new_op, NULL, child, depth + 1, rschema);
-            if (_parms->out_error_tag)
+            if (_parms->out_error.tag)
             {
                 apteryx_free_tree (tree);
                 tree = NULL;
@@ -3028,7 +3038,7 @@ sch_parms_init (sch_instance * instance, int flags, char * def_op, bool is_edit)
     _parms->in_def_op = def_op;
     _parms->in_is_edit = is_edit;
     _parms->out_tree = NULL;
-    _parms->out_error_tag = NULL;
+    _parms->out_error = NC_ERROR_PARMS_INIT;
     _parms->out_deletes = NULL;
     _parms->out_removes = NULL;
     _parms->out_creates = NULL;
@@ -3062,16 +3072,11 @@ sch_parm_tree (sch_xml_to_gnode_parms parms)
     return ret;
 }
 
-char *
-sch_parm_error_tag (sch_xml_to_gnode_parms parms)
+nc_error_parms
+sch_parm_error (sch_xml_to_gnode_parms parms)
 {
     _sch_xml_to_gnode_parms *_parms = parms;
-
-    if (!_parms)
-    {
-        return NULL;
-    }
-    return _parms->out_error_tag;
+    return _parms->out_error;
 }
 
 GList *
@@ -3133,6 +3138,10 @@ sch_parm_free (sch_xml_to_gnode_parms parms)
         g_list_free_full (_parms->out_removes, g_free);
         g_list_free_full (_parms->out_creates, g_free);
         g_list_free_full (_parms->out_replaces, g_free);
+        _parms->out_error.tag = 0;
+        _parms->out_error.type = 0;
+        g_string_free (_parms->out_error.msg, TRUE);
+        g_hash_table_destroy (_parms->out_error.info);
         g_free (_parms);
     }
 }
