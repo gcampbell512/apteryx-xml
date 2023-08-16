@@ -336,6 +336,7 @@ static bool
 save_module_info (sch_instance *instance, xmlNode *module)
 {
     sch_loaded_model *loaded;
+    bool add = true;
     xmlChar *mod = xmlGetProp (module, (xmlChar *) "model");
     xmlChar *org = xmlGetProp (module, (xmlChar *) "organization");
     xmlChar *ver = xmlGetProp (module, (xmlChar *) "version");
@@ -361,55 +362,73 @@ save_module_info (sch_instance *instance, xmlNode *module)
         }
     }
 
-    loaded = g_malloc0 (sizeof (sch_loaded_model));
-    if (loaded)
+    if (mod)
     {
-        if (module->ns)
+        /* Check for duplicate model information being saved into the list of models */
+        for (GList *iter = g_list_first (instance->models_list); iter;
+             iter = g_list_next (iter))
         {
-            if (module->ns->href)
+            loaded = iter->data;
+            if (g_strcmp0 ((char *) mod, loaded->model) == 0)
             {
-                loaded->ns_href = g_strdup ((char *) module->ns->href);
-            }
-            if (module->ns->prefix)
-            {
-                loaded->ns_prefix = g_strdup ((char *) module->ns->prefix);
+                /* We have a duplicate model */
+                add = false;
             }
         }
-        else
-        {
-            xmlChar *nsp = xmlGetProp (module, (xmlChar *) "namespace");
-            xmlChar *pre = xmlGetProp (module, (xmlChar *) "prefix");
+    }
 
-            if (nsp)
+    if (add)
+    {
+        loaded = g_malloc0 (sizeof (sch_loaded_model));
+        if (loaded)
+        {
+            if (module->ns)
             {
-                loaded->ns_href = (char *) nsp;
+                if (module->ns->href)
+                {
+                    loaded->ns_href = g_strdup ((char *) module->ns->href);
+                }
+                if (module->ns->prefix)
+                {
+                    loaded->ns_prefix = g_strdup ((char *) module->ns->prefix);
+                }
             }
-            if (pre)
+            else
             {
-                loaded->ns_prefix = (char *) pre;
+                xmlChar *nsp = xmlGetProp (module, (xmlChar *) "namespace");
+                xmlChar *pre = xmlGetProp (module, (xmlChar *) "prefix");
+
+                if (nsp)
+                {
+                    loaded->ns_href = (char *) nsp;
+                }
+                if (pre)
+                {
+                    loaded->ns_prefix = (char *) pre;
+                }
             }
+            if (mod)
+            {
+                loaded->model = g_strdup ((char *) mod);
+            }
+            if (org)
+            {
+                loaded->organization = g_strdup ((char *) org);
+            }
+            if (ver)
+            {
+                loaded->version = g_strdup ((char *) ver);
+            }
+            if (feat)
+            {
+                loaded->features = g_strdup ((char *) feat);
+            }
+            if (devi)
+            {
+                loaded->deviations = g_strdup ((char *) devi);
+            }
+            instance->models_list = (void *) g_list_append (instance->models_list, loaded);
         }
-        if (mod)
-        {
-            loaded->model = g_strdup ((char *) mod);
-        }
-        if (org)
-        {
-            loaded->organization = g_strdup ((char *) org);
-        }
-        if (ver)
-        {
-            loaded->version = g_strdup ((char *) ver);
-        }
-        if (feat)
-        {
-            loaded->features = g_strdup ((char *) feat);
-        }
-        if (devi)
-        {
-            loaded->deviations = g_strdup ((char *) devi);
-        }
-        instance->models_list = (void *) g_list_append (instance->models_list, loaded);
     }
 
     if (mod)
