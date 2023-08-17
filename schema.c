@@ -3159,6 +3159,39 @@ decode_json_type (json_t *json)
     return value;
 }
 
+static bool
+is_bool (xmlNodePtr parent)
+{
+    unsigned long value_count = 0;
+    xmlNodePtr child;
+    bool have_true = false;
+    bool have_false = false;
+    char *name;
+
+    if (!parent || !parent->children)
+        return false;
+
+    child = parent->children;
+    while (child != NULL) {
+        /* Check for VALUE type nodes. Ignore nodes like WATCH or PROVIDE. */
+        if (child->type == XML_ELEMENT_NODE && g_strcmp0 ((char *)child->name, "VALUE") == 0) {
+            value_count++;
+            if (value_count > 2)
+                break;
+
+            name = (char *) xmlGetProp (child, (xmlChar *) "name");
+            if (g_strcmp0 (name, "true") == 0)
+                have_true = true;
+            else if (g_strcmp0 (name, "false") == 0)
+                have_false = true;
+            free (name);
+        }
+        child = child->next;
+    }
+
+    return value_count == 2 && have_true && have_false;
+}
+
 static json_t *
 encode_json_type (sch_node *schema, char *val)
 {
@@ -3177,7 +3210,7 @@ encode_json_type (sch_node *schema, char *val)
                 json = json_integer (i);
         }
         /* boolean MUST(in xml) be an enum of exactly two entities */
-        if (!json && xmlChildElementCount ((xmlNode *)schema) == 2)
+        if (!json && is_bool ((xmlNode *)schema))
         {
             if (g_strcmp0 (val, "true") == 0)
                 json = json_true ();
