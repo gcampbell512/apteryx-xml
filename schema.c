@@ -2791,7 +2791,8 @@ _operation_ok (_sch_xml_to_gnode_parms *_parms, xmlNode *xml, char *curr_op, cha
         /* Check for invalid transitions between sub-operations. We only allow
          * merge->anything transitions.
          */
-        if (g_strcmp0 (curr_op, *new_op) != 0 && g_strcmp0 (curr_op, "merge") != 0)
+        if (g_strcmp0 (curr_op, *new_op) != 0 && g_strcmp0 (curr_op, "merge") != 0 &&
+            g_strcmp0 (curr_op, "none") != 0)
         {
             _parms->out_error.tag = NC_ERR_TAG_OPR_NOT_SUPPORTED;
             _parms->out_error.type = NC_ERR_TYPE_PROTOCOL;
@@ -2802,10 +2803,10 @@ _operation_ok (_sch_xml_to_gnode_parms *_parms, xmlNode *xml, char *curr_op, cha
 }
 
 static void
-_perform_actions (_sch_xml_to_gnode_parms *_parms, char *curr_op, char *new_op, char *new_xpath)
+_perform_actions (_sch_xml_to_gnode_parms *_parms, int depth, char *curr_op, char *new_op, char *new_xpath)
 {
-    /* Do nothing if not an edit, or operation not changing. */
-    if (!_parms->in_is_edit || g_strcmp0 (curr_op, new_op) == 0)
+    /* Do nothing if not an edit, or operation not changing, unless depth is 0. */
+    if (!_parms->in_is_edit || (g_strcmp0 (curr_op, new_op) == 0 && depth != 0))
     {
         return;
     }
@@ -2814,18 +2815,22 @@ _perform_actions (_sch_xml_to_gnode_parms *_parms, char *curr_op, char *new_op, 
     if (g_strcmp0 (new_op, "delete") == 0)
     {
         _parms->out_deletes = g_list_append (_parms->out_deletes, g_strdup (new_xpath));
+        DEBUG (_parms->in_flags, "delete <%s>\n", new_xpath);
     }
     else if (g_strcmp0 (new_op, "remove") == 0)
     {
         _parms->out_removes = g_list_append (_parms->out_removes, g_strdup (new_xpath));
+        DEBUG (_parms->in_flags, "remove <%s>\n", new_xpath);
     }
     else if (g_strcmp0 (new_op, "create") == 0)
     {
         _parms->out_creates = g_list_append (_parms->out_creates, g_strdup (new_xpath));
+        DEBUG (_parms->in_flags, "create <%s>\n", new_xpath);
     }
     else if (g_strcmp0 (new_op, "replace") == 0)
     {
         _parms->out_replaces = g_list_append (_parms->out_replaces, g_strdup (new_xpath));
+        DEBUG (_parms->in_flags, "replace <%s>\n", new_xpath);
     }
 }
 
@@ -2843,6 +2848,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     char *key = NULL;
     char *new_xpath = NULL;
     char *new_op = curr_op;
+    bool ret_tree = false;
 
 
     /* Detect change in namespace */
@@ -2941,12 +2947,14 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     /* LEAF */
     else
     {
-        if (g_strcmp0 (new_op, "delete") != 0 && g_strcmp0 (new_op, "remove") != 0)
+        if (g_strcmp0 (new_op, "delete") != 0 && g_strcmp0 (new_op, "remove") != 0 &&
+            g_strcmp0 (new_op, "none") != 0)
         {
             gboolean validate = true;
             char *value;
 
             tree = node = APTERYX_NODE (NULL, g_strdup (name));
+            ret_tree = true;
             if (!xml_node_has_content (xml) && !(_parms->in_flags & SCH_F_STRIP_DATA)
                     && (_parms->in_is_edit))
             {
@@ -2983,7 +2991,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     }
 
     /* Carry out actions for this operation. Does nothing if not edit-config. */
-    _perform_actions (_parms, curr_op, new_op, new_xpath);
+    _perform_actions (_parms, depth, curr_op, new_op, new_xpath);
 
     for (child = xmlFirstElementChild (xml); child; child = xmlNextElementSibling (child))
     {
@@ -3013,6 +3021,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
                 APTERYX_NODE (node, g_strdup ((const char *) child->name));
                 DEBUG (_parms->in_flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
             }
+            ret_tree = true;
         }
         else
         {
@@ -3027,8 +3036,17 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
             if (cn)
             {
                 g_node_append (node, cn);
+                ret_tree = true;
             }
         }
+    }
+
+    /* If no children added, no point in returning anything. */
+    if (!ret_tree && _parms->in_is_edit)
+    {
+        apteryx_free_tree (tree);
+        tree = NULL;
+        goto exit;
     }
 
     /* Get everything from here down if a trunk of a subtree */
