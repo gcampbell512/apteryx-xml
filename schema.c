@@ -2571,7 +2571,28 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
         return NULL;
     }
 
-    if (sch_is_list (schema))
+    if (sch_is_leaf_list (schema))
+    {
+        apteryx_sort_children (node, g_strcmp0);
+        for (GNode * child = node->children; child; child = child->next)
+        {
+            GNode *value_node = child->children;
+            if (value_node)
+            {
+                char *leaf_name = APTERYX_NAME (value_node);
+                data = xmlNewNode (NULL, BAD_CAST name);
+                xmlNodeSetContent (data, (const xmlChar *) leaf_name);
+                if (schema && (!pschema || ((xmlNode *)pschema)->ns != ((xmlNode *)schema)->ns))
+                {
+                    xmlNsPtr nns = xmlNewNs (data, ((xmlNode *)schema)->ns->href, NULL);
+                    xmlSetNs (data, nns);
+                }
+                xmlAddChildList (parent, data);
+                DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", APTERYX_NAME (node), leaf_name);
+            }
+        }
+    }
+    else if (sch_is_list (schema))
     {
         apteryx_sort_children (node, g_strcmp0);
         for (GNode * child = node->children; child; child = child->next)
