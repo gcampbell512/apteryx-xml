@@ -1166,10 +1166,7 @@ _sch_node_find_name (xmlNs *ns, sch_node * parent, const char *path_name, GList 
                 found = _sch_node_find_name (ns, n, path_name, path_list);
                 if (found)
                 {
-                    if (g_strcmp0 (name, "*") != 0)
-                    {
-                        *path_list = g_list_prepend (*path_list, g_strdup (name));
-                    }
+                    *path_list = g_list_prepend (*path_list, g_strdup (name));
                     xmlFree (name);
                     break;
                 }
@@ -2248,6 +2245,8 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
                     len += strlen (path) +  64;
                     new_path = g_malloc0 (len);
                     len = 0;
+                    /* Ammend the path with the new information. Note we drop the last list
+                     * item as it contains a duplicate star slash already in the path */
                     for (list = g_list_first (path_list); list; list = g_list_next (list))
                     {
                         if (first)
@@ -2258,7 +2257,8 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
                         }
                         else
                         {
-                            len += sprintf (new_path + len, "/%s", (char *) list->data);
+                            if (list->next)
+                                len += sprintf (new_path + len, "/%s", (char *) list->data);
                             g_free (list->data);
                         }
                     }
