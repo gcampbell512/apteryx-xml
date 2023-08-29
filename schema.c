@@ -2594,6 +2594,9 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
     }
     else if (sch_is_list (schema))
     {
+        xmlNode *list_data = NULL;
+        data = NULL;
+
         apteryx_sort_children (node, g_strcmp0);
         for (GNode * child = node->children; child; child = child->next)
         {
@@ -2601,12 +2604,12 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
 
             DEBUG (flags, "%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
                    APTERYX_NAME (child));
-            data = xmlNewNode (NULL, BAD_CAST name);
+            list_data = xmlNewNode (NULL, BAD_CAST name);
             gnode_sort_children (sch_node_child_first (schema), child);
             for (GNode * field = child->children; field; field = field->next)
             {
                 if (_sch_gnode_to_xml (instance, sch_node_child_first (schema), ns,
-                                       data, field, flags, depth + 1))
+                                       list_data, field, flags, depth + 1))
                 {
                     has_child = true;
                 }
@@ -2618,7 +2621,7 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
                     char *key = sch_list_key (schema);
                     if (key)
                     {
-                        xmlNode *n = data->children;
+                        xmlNode *n = list_data->children;
                         while (n)
                         {
                             if (n->type == XML_ELEMENT_NODE && g_strcmp0 (key, (char *) n->name) == 0)
@@ -2630,17 +2633,18 @@ _sch_gnode_to_xml (sch_instance * instance, sch_node * schema, xmlNs *ns, xmlNod
                         {
                             xmlNode *key_data = xmlNewNode (NULL, BAD_CAST key);
                             xmlNodeSetContent (key_data, (const xmlChar *) APTERYX_NAME (child));
-                            xmlAddPrevSibling (data->children, key_data);
+                            xmlAddPrevSibling (list_data->children, key_data);
                         }
                         g_free (key);
                     }
                 }
-                xmlAddChildList (parent, data);
+                xmlAddChildList (parent, list_data);
+                data = list_data;
             }
             else
             {
-                xmlFreeNode (data);
-                data = NULL;
+                xmlFreeNode (list_data);
+                list_data = NULL;
             }
         }
     }
