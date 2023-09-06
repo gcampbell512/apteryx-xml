@@ -2951,6 +2951,17 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     /* LEAF */
     else
     {
+        /* Check that this leaf is writable */
+        if (_parms->in_is_edit && !sch_is_writable (schema))
+        {
+            DEBUG (_parms->in_flags, "Attempt to edit non-writable node \"%s\"\n", name);
+            apteryx_free_tree (tree);
+            _parms->out_error.tag = NC_ERR_TAG_INVALID_VAL;
+            _parms->out_error.type = NC_ERR_TYPE_PROTOCOL;
+            tree = NULL;
+            goto exit;
+        }
+
         if (g_strcmp0 (new_op, "delete") != 0 && g_strcmp0 (new_op, "remove") != 0 &&
             g_strcmp0 (new_op, "none") != 0)
         {
