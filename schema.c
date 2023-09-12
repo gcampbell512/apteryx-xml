@@ -2897,7 +2897,16 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     }
 
     /* LIST */
-    if (sch_is_list (schema))
+    if (sch_is_leaf_list (schema))
+    {
+        DEBUG (_parms->in_flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
+        tree = APTERYX_NODE (NULL, g_strdup (name));
+        node = APTERYX_NODE (tree, g_strdup ("*"));
+        schema = sch_node_child_first (schema);
+        if (rschema)
+            *rschema = schema;
+    }
+    else if (sch_is_list (schema))
     {
         char *old_xpath = new_xpath;
         char *key_value;
