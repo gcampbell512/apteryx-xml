@@ -1825,128 +1825,135 @@ sch_validate_pattern (sch_node * node, const char *value)
 
 /* Data translation/manipulation */
 
-static bool parse_query_fields (sch_node * schema, char *fields, GNode *parent, int flags, int depth);
-static GNode *
-parse_field (sch_node * schema, const char *path, int flags, int depth)
+static GList*
+q2n_split_params (const char *params, char separator)
 {
-    GNode *rnode = NULL;
-    GNode *child = NULL;
-    const char *next = NULL;
-    const char *sublist = NULL;
-    char *name;
-
-    /* Find name */
-    sublist = strchr (path, '(');
-    next = strchr (path, '/');
-    if (sublist && (!next || sublist < next))
-        name = g_strndup (path, sublist - path);
-    else if (next)
-        name = g_strndup (path, next - path);
-    else
-        name = g_strdup (path);
-
-    /* Find schema node */
-    schema = sch_node_child (schema, name);
-    if (schema == NULL)
+    GList *list = NULL;
+    int depth = 0;
+    GString *result = g_string_new (NULL);
+    int i = 0;
+    for (i = 0; i < strlen (params); i++)
     {
-        ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s\n", name);
-        g_free (name);
-        return NULL;
-    }
-    if (!sch_is_readable (schema))
-    {
-        ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
-        g_free (name);
-        return NULL;
-    }
-
-    /* Create the node */
-    rnode = APTERYX_NODE (NULL, name);
-    DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
-
-    /* Process subpath */
-    if (next)
-    {
-        child = parse_field (schema, next + 1, flags, depth + 1);
-        if (!child)
+        char c = params[i];
+        if (c == '(' || c == '[' || c == '{')
+            depth += 1;
+        else if (c == ')' || c == ']' || c == '}')
+            depth -= 1;
+        else if (depth == 0 && c == separator)
         {
-            free ((void *)rnode->data);
-            g_node_destroy (rnode);
-            return NULL;
+            list = g_list_append (list, g_string_free (result, false));
+            result = g_string_new (NULL);
+            continue;
         }
-        g_node_prepend (rnode, child);
+        g_string_append_c (result, c);
     }
-    else if (sublist)
-    {
-        char *fields = g_strndup (sublist + 1, strlen (sublist) - 2);
-        if (!parse_query_fields (schema, fields, rnode, flags, depth + 1))
-        {
-            free ((void *)rnode->data);
-            g_node_destroy (rnode);
-            free (fields);
-            return false;
-        }
-        free (fields);
-    }
-
-    return rnode;
+    if (result)
+        list = g_list_append (list, g_string_free (result, false));
+    return list;
 }
 
-static void
-merge_node_into_parent (GNode *parent, GNode *node)
+static GNode*
+q2n_append_path (sch_node * schema, GNode *root, const char *path, int flags, int depth, sch_node **rschema)
 {
-    for (GNode *pchild = parent->children; pchild; pchild = pchild->next)
+    char **nodes = g_strsplit (path, "/", -1);
+    char **node = nodes;
+    while (*node)
     {
-        if (g_strcmp0 (pchild->data, node->data) == 0)
+        char *name = *node;
+
+        /* Find schema node */
+        schema = sch_node_child (schema, name);
+        if (schema == NULL)
         {
-            /* Unlink all the children and add to the original parent */
-            GList *children = NULL;
-            for (GNode *nchild = node->children; nchild; nchild = nchild->next)
-            {
-                children = g_list_append (children, nchild);
-            }
-            for (GList *nchild = children; nchild; nchild = nchild->next)
-            {
-                g_node_unlink (nchild->data);
-                merge_node_into_parent (pchild, nchild->data);
-            }
-            g_list_free (children);
-            node->children = NULL;
-            free ((void *)node->data);
-            g_node_destroy (node);
-            return;
+            ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s\n", name);
+            return NULL;
         }
+        if (!sch_is_readable (schema))
+        {
+            ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
+            return NULL;
+        }
+
+        /* Create the node if it does not already exist */
+        DEBUG (flags, "%*s%s\n", depth * 2, " ", name);
+        GNode *existing = apteryx_find_child (root, name);
+        if (existing)
+            root = existing;
+        else
+            root = g_node_append_data (root, g_strdup (name));
+        node++;
+        depth++;
     }
-    g_node_prepend (parent, node);
+    g_strfreev (nodes);
+    if (rschema)
+        *rschema = schema;
+    return root;
+}
+
+static bool
+_field_query_to_node (sch_node * schema, const char *fields, GNode *parent, int flags, int depth, const char *tail)
+{
+    GList *params = q2n_split_params (fields, ';');
+    bool rc = true;
+
+    for (GList *iter = g_list_first (params); rc && iter; iter = g_list_next (iter))
+    {
+        sch_node *nschema = schema;
+        GNode *rroot = parent;
+        fields = iter->data;
+        char *left = g_strstr_len (fields, -1, "(");
+        char *right = g_strrstr_len (fields, -1, ")");
+        if (left == NULL && right == NULL)
+        {
+            rroot = q2n_append_path (schema, rroot, fields, flags, depth, &nschema);
+            if (!rroot)
+                rc = false;
+            if (rc && tail)
+            {
+                rroot = q2n_append_path (nschema, rroot, tail, flags, depth, NULL);
+                if (!rroot)
+                    rc = false;
+            }
+            continue;
+        }
+        if (left == NULL || right == NULL)
+            return false;
+        char *left_side = (left - fields) > 0 ? g_strndup (fields, left - fields) : NULL;
+        char *middle = g_strndup (left + 1, right - left - 1);
+        char *right_side = strlen (right + 1) > 0 ? g_strdup (right + 1) : NULL;
+        if (left_side)
+        {
+            rroot = q2n_append_path (nschema, rroot, left_side, flags, depth, &nschema);
+            if (!rroot)
+                rc = false;
+        }
+        if (rc && middle)
+        {
+            if (!_field_query_to_node (nschema, middle, rroot, flags, depth, right_side ?: tail))
+            {
+                rc = false;
+                goto exit;
+            }
+        }
+        else if (rc && tail)
+        {
+            rroot = q2n_append_path (nschema, rroot, tail, flags, depth, NULL);
+            if (!rroot)
+                return false;
+        }
+        free (left_side);
+        free (middle);
+        free (right_side);
+    }
+exit:
+    g_list_free_full (params, g_free);
+    return rc;
 }
 
 static bool
 parse_query_fields (sch_node * schema, char *fields, GNode *parent, int flags, int depth)
 {
-    char *h, *t;
-    bool skip = false;
-
-    h = t = fields;
-    while (*h)
-    {
-        if (*(h + 1) == '(')
-            skip = true;
-        else if (*(h + 1) == '\0' || (!skip && *(h + 1) == ';'))
-        {
-            char *field = g_strndup (t, (h - t + 1));
-            GNode *node = parse_field (schema, field, flags, depth);
-            free (field);
-            if (!node)
-                return false;
-            merge_node_into_parent (parent, node);
-            t = h + 2;
-        }
-        else if (*(h + 1) == ')')
-            skip = false;
-
-        h++;
-    }
-    return true;
+    return _field_query_to_node (schema, fields, parent, flags, depth, NULL);
 }
 
 static bool
