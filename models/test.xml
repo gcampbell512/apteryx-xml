@@ -56,6 +56,12 @@
         <NODE name="minutes" mode="r" help="minutes" range="0..59"/>
         <NODE name="seconds" mode="r" help="seconds" range="0..59"/>
       </NODE>
+      <NODE name="downtime" help="downtime">
+        <NODE name="days" mode="r" help="days" range="1..31"/>
+        <NODE name="hours" mode="r" help="hours" range="0..23"/>
+        <NODE name="minutes" mode="r" help="minutes" range="0..59"/>
+        <NODE name="seconds" mode="r" help="seconds" range="0..59"/>
+      </NODE>
     </NODE>
     <NODE name="animals">
       <NODE name="animal" help="This is a list of animals">
