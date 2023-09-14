@@ -198,42 +198,42 @@ merge_nodes (xmlNs * ns, xmlNode * parent, xmlNode * orig, xmlNode * new, int de
 
     for (n = new; n; n = n->next)
     {
+        xmlAttr* attribute = n->properties;
+
         /* Check if this node is already in the existing tree */
         for (o = orig; o; o = o->next)
         {
             if (sch_ns_node_equal (n, o))
             {
-                /* May need to set the model info even if this is a match */
+                /* Check to see if the model names match */
                 xmlChar *mod_n = xmlGetProp (n, (xmlChar *)"model");
                 if (mod_n)
                 {
                     xmlChar *mod_o = xmlGetProp (o, (xmlChar *)"model");
-                    if (!mod_o)
+                    if (mod_o)
                     {
-                        xmlChar *org = xmlGetProp (n, (xmlChar *)"organization");
-                        xmlChar *ver = xmlGetProp (n, (xmlChar *)"version");
-                        xmlChar *feat = xmlGetProp (n, (xmlChar *)"features");
-                        xmlChar *devi = xmlGetProp (n, (xmlChar *)"deviations");
-                        xmlNewProp (o, (const xmlChar *)"model", mod_n);
-                        xmlNewProp (o, (const xmlChar *)"organization", org);
-                        xmlNewProp (o, (const xmlChar *)"version", ver);
-                        xmlNewProp (o, (const xmlChar *)"features", feat);
-                        xmlNewProp (o, (const xmlChar *)"deviations", devi);
-                        xmlFree (org);
-                        xmlFree (ver);
-                        xmlFree (feat);
-                        xmlFree (devi);
-                    }
-                    else if (g_strcmp0 ((char *) mod_o, (char *) mod_n) != 0)
-                    {
-                        xmlChar *name = xmlGetProp (n, (xmlChar *)"name");
-                        syslog (LOG_ERR, "XML: Conflicting model names in same namespace \"%s:%s\" \"%s:%s\"",
-                            (char *) mod_o, (char *) name, (char *) mod_n, (char *) name);
-                        xmlFree (name);
+                        if (g_strcmp0 ((char *) mod_o, (char *) mod_n) != 0)
+                        {
+                            xmlChar *name = xmlGetProp (n, (xmlChar *)"name");
+                            syslog (LOG_ERR, "XML: Conflicting model names in same namespace \"%s:%s\" \"%s:%s\"",
+                                (char *) mod_o, (char *) name, (char *) mod_n, (char *) name);
+                            xmlFree (name);
+                        }
+                        xmlFree (mod_o);
                     }
                     xmlFree (mod_n);
-                    if (mod_o)
-                        xmlFree (mod_o);
+                }
+
+                /* Merge into the original node any new attributes from the new node */
+                while (attribute && attribute->name && attribute->children)
+                {
+                    if (!xmlHasProp (o, attribute->name))
+                    {
+                        xmlChar* value = xmlNodeListGetString (n->doc, attribute->children, 1);
+                        xmlSetProp (o, attribute->name, value);
+                        xmlFree (value);
+                    }
+                    attribute = attribute->next;
                 }
                 break;
             }
