@@ -81,15 +81,15 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
     if node.keyword in ['rpc', 'notification']:
         return
 
+    # Strip all nodes from the path at list items
+    if node.parent.keyword == 'list':
+        strip = level
+
     # Skip over choice and case
     if node.keyword in ['choice', 'case']:
         for child in node.i_children:
             print_node(child, module, prefix, fd, ctx, level, strip)
         return
-
-    # Strip all nodes from the path at list items
-    if node.parent.keyword == 'list':
-        strip = level
 
     # Create path value
     value = mk_path_str(node, prefix, level, strip, fd)
