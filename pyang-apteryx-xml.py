@@ -185,7 +185,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         if ctx.opts.deviations:
             lst = []
             for x in ctx.opts.deviations:
-                lst.append(os.path.splitext(x)[0])
+                lst.append(os.path.basename(os.path.splitext(x)[0]))
             deviations_string = ','.join(lst)
             root.set("deviations", deviations_string)
 
