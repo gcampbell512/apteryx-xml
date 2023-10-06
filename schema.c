@@ -2859,6 +2859,7 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     char *key = NULL;
     char *new_xpath = NULL;
     char *new_op = curr_op;
+    bool key_valid = false;
     bool ret_tree = false;
 
 
@@ -2929,8 +2930,10 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
             DEBUG (_parms->in_flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
             if (!(_parms->in_flags & SCH_F_STRIP_KEY) || xmlFirstElementChild (xml))
             {
-                APTERYX_NODE (node, g_strdup (key));
+                GNode *_node = APTERYX_NODE (node, g_strdup (key));
                 DEBUG (_parms->in_flags, "%*s%s\n", (depth + 1) * 2, " ", key);
+                if (!_parms->in_is_edit)
+                    g_node_prepend_data (_node, NULL);
             }
             key_value = attr;
         }
@@ -2981,8 +2984,9 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
         if (g_strcmp0 (new_op, "delete") != 0 && g_strcmp0 (new_op, "remove") != 0 &&
             g_strcmp0 (new_op, "none") != 0)
         {
+            sch_node *sch_parent;
             gboolean validate = true;
-            char *value;
+            char *value = NULL;
 
             tree = node = APTERYX_NODE (NULL, g_strdup (name));
             ret_tree = true;
@@ -3015,9 +3019,42 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
                     tree = NULL;
                     goto exit;
                 }
-                node = APTERYX_NODE (tree, value);
-                DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+                /* Test for RFC6241 section 6.2.5 compliance */
+                sch_parent = sch_node_parent (sch_node_parent (schema));
+                if (!_parms->in_is_edit && sch_parent && sch_is_list (sch_parent))
+                {
+                    xmlNode *xml_parent = xml->parent;
+                    xml_parent = xml_parent->parent;
+                    char * key = sch_name (sch_node_child_first (sch_node_child_first (sch_parent)));
+
+                    xml_parent = xml->parent;
+                    for (child = xmlFirstElementChild (xml_parent); child; child = xmlNextElementSibling (child))
+                    {
+                        if (key && g_strcmp0 ((const char *) child->name, key) == 0)
+                        {
+                            key_valid = true;
+                            break;
+                        }
+                    }
+
+                    if (key_valid)
+                    {
+                        node = APTERYX_NODE (tree, value);
+                        DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+                    }
+                    else
+                        g_free (value);
+
+                    g_free (key);
+                }
+                else
+                {
+                    node = APTERYX_NODE (tree, value);
+                    DEBUG (_parms->in_flags, "%*s%s = %s\n", depth * 2, " ", name, APTERYX_NAME (node));
+                }
             }
+            else if (!_parms->in_is_edit)
+                g_node_prepend_data (node, NULL);
         }
     }
 
@@ -3035,8 +3072,10 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
                 if (xml_node_has_content (child))
                 {
                     /* Want all parameters for one entry in list. */
-                    APTERYX_NODE (node, g_strdup ("*"));
+                    GNode *_node = APTERYX_NODE (node, g_strdup ("*"));
                     DEBUG (_parms->in_flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
+                    if (!_parms->in_is_edit)
+                        g_node_prepend_data (_node, NULL);
                 }
                 else
                 {
@@ -3049,8 +3088,10 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
             /* Multiple children - make sure key appears */
             else if (xmlChildElementCount (xml) > 1)
             {
-                APTERYX_NODE (node, g_strdup ((const char *) child->name));
+                GNode *_node = APTERYX_NODE (node, g_strdup ((const char *) child->name));
                 DEBUG (_parms->in_flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
+                if (!_parms->in_is_edit)
+                    g_node_prepend_data (_node, NULL);
             }
             ret_tree = true;
         }
@@ -3084,9 +3125,12 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     if (!xmlFirstElementChild (xml) && sch_node_child_first (schema) &&
         g_strcmp0 (APTERYX_NAME (node), "*") != 0)
     {
-        APTERYX_NODE (node, g_strdup ("*"));
+        node = APTERYX_NODE (node, g_strdup ("*"));
         DEBUG (_parms->in_flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
     }
+
+    if (!_parms->in_is_edit && !key_valid && node && node->data && !node->children)
+        g_node_prepend_data (node, NULL);
 
 exit:
     free (name);
