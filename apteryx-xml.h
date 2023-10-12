@@ -66,6 +66,7 @@ sch_node *sch_node_child (sch_node *parent, const char *name);
 sch_node *sch_node_child_first (sch_node * parent);
 sch_node *sch_node_next_sibling (sch_node * node);
 sch_node *sch_preorder_next (sch_node *current, sch_node *root);
+sch_node *sch_get_root_schema (sch_instance * instance);
 
 char *sch_name (sch_node * node);
 char *sch_model (sch_node * node, bool ignore_ancestors);
@@ -86,6 +87,8 @@ bool sch_is_proxy (sch_node * node);
 char *sch_translate_to (sch_node * node, char *value);
 char *sch_translate_from (sch_node * node, char *value);
 bool sch_validate_pattern (sch_node * node, const char *value);
+gboolean sch_match_name (const char *s1, const char *s2);
+bool sch_ns_match (sch_node *node, void *ns);
 
 /* Data translation/manipulation */
 typedef enum

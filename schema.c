@@ -767,8 +767,8 @@ sch_get_loaded_models (sch_instance * instance)
     return instance->models_list;
 }
 
-static gboolean
-match_name (const char *s1, const char *s2)
+gboolean
+sch_match_name (const char *s1, const char *s2)
 {
     char c1, c2;
     do
@@ -943,7 +943,7 @@ sch_dump_xml (sch_instance * instance)
 }
 
 static bool
-sch_ns_match (xmlNode *node, xmlNs *ns)
+_sch_ns_match (xmlNode *node, xmlNs *ns)
 {
     sch_instance *instance = node->doc->_private;
 
@@ -970,6 +970,18 @@ sch_ns_match (xmlNode *node, xmlNs *ns)
 
     /* No match */
     return false;
+}
+
+bool
+sch_ns_match (sch_node *node, void *ns)
+{
+    return _sch_ns_match (node, ns);
+}
+
+sch_node *
+sch_get_root_schema (sch_instance * instance)
+{
+    return (instance ? xmlDocGetRootElement (instance->doc) : NULL);
 }
 
 static xmlNs *
@@ -1079,7 +1091,7 @@ lookup_node (sch_instance *instance, xmlNs *ns, xmlNode *node, const char *path)
             if (lk)
                 key[lk - key] = '\0';
         }
-        if (name && (name[0] == '*' || match_name (name, key)) && sch_ns_match (n, ns))
+        if (name && (name[0] == '*' || sch_match_name (name, key)) && _sch_ns_match (n, ns))
         {
             free (key);
             if (path)
@@ -1130,7 +1142,7 @@ _sch_node_child (xmlNs *ns, sch_node * parent, const char *child)
         if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
         {
             char *name = (char *) xmlGetProp (n, (xmlChar *) "name");
-            if (name && (name[0] == '*' || match_name (name, child)) && sch_ns_match (n, ns))
+            if (name && (name[0] == '*' || sch_match_name (name, child)) && _sch_ns_match (n, ns))
             {
                 xmlFree (name);
                 break;
@@ -1155,7 +1167,7 @@ _sch_node_find_name (xmlNs *ns, sch_node * parent, const char *path_name, GList 
         if (n->type == XML_ELEMENT_NODE && n->name[0] == 'N')
         {
             char *name = (char *) xmlGetProp (n, (xmlChar *) "name");
-            if (match_name (name, path_name) && sch_ns_match (n, ns))
+            if (sch_match_name (name, path_name) && _sch_ns_match (n, ns))
             {
                 xmlFree (name);
                 found = true;
