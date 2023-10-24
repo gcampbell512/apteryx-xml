@@ -3345,7 +3345,7 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags)
                 /* Add missing values */
                 else if (!APTERYX_HAS_VALUE (child))
                 {
-                    APTERYX_NODE (child->children, value);
+                    APTERYX_NODE (child, value);
                     value = NULL;
                 }
                 /* Replace empty value */
