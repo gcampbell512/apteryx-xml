@@ -104,10 +104,11 @@ typedef enum
     SCH_F_TRIM_DEFAULTS         = (1 << 11), /* Remove all nodes set to default values */
     SCH_F_ADD_MISSING_NULL      = (1 << 12), /* Add missing nodes with NULL values */
     SCH_F_SET_NULL              = (1 << 13), /* Set all nodes to NULL */
+    SCH_F_FILTER_RDEPTH         = (1 << 14), /* Set filter based on depth value */
 } sch_flags;
 GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char * path, int flags, sch_node ** rschema);
 bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags);
-bool sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags);
+bool sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags, int rdepth);
 GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char * path, int flags); //DEPRECATED
 
 /*
