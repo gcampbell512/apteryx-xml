@@ -131,7 +131,8 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
         typedef.i_config = node.i_config
         if node.i_default is not None:
             typedef.i_default = node.i_default
-            typedef.i_default_str = node.i_default_str
+            if hasattr(node, "i_default_str"):
+                typedef.i_default_str = node.i_default_str
         typedef.keyword = node.keyword
         node = typedef
         ntype = node.search_one('type')

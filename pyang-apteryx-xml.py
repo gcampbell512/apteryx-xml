@@ -180,8 +180,10 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         if rev is not None:
             root.set("version", rev.arg)
         if ctx.opts.features:
-            features_string = ','.join(ctx.opts.features)
-            root.set("features", features_string)
+            # Ignore the features list if it is empty
+            if len(ctx.opts.features[0]) > 0:
+                features_string = ','.join(ctx.opts.features)
+                root.set("features", features_string)
         if ctx.opts.deviations:
             lst = []
             for x in ctx.opts.deviations:
