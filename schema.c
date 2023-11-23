@@ -1258,6 +1258,40 @@ sch_node_child (sch_node * parent, const char *child)
 }
 
 sch_node *
+sch_node_namespace_child (sch_node * parent, const char *namespace, const char *child)
+{
+
+    xmlNs *ns;
+    xmlNode *module;
+    sch_node *node;
+    module = xmlNewNode (NULL, (xmlChar *) "MODULE");
+    ns = xmlNewNs (module, (const xmlChar *) namespace, NULL);
+    node =  _sch_node_child (ns, parent, child);
+
+    /* Note the ns is freed as part of the xmlFreeNode */
+    xmlFreeNode (module);
+    return node;
+}
+
+sch_node *
+sch_node_by_namespace (sch_instance * instance, const char *namespace, const char *prefix)
+{
+    xmlNode *xml = sch_child_first (instance);
+
+    while (xml && xml->type == XML_ELEMENT_NODE)
+    {
+        if (xml->ns &&
+            ((namespace && xml->ns->href && g_strcmp0 ((char *) xml->ns->href, namespace) == 0) ||
+             (!namespace && prefix &&
+              xml->ns->prefix && g_strcmp0 ((char *) xml->ns->prefix, prefix) == 0)))
+            return xml;
+
+        xml = xml->next;
+    }
+    return NULL;
+}
+
+sch_node *
 sch_node_child_first (sch_node *parent)
 {
     xmlNode *xml = (xmlNode *) parent;
@@ -1397,6 +1431,17 @@ sch_namespace (sch_node * node)
     if (xml->ns && xml->ns->href)
     {
         return g_strdup ((char *) xml->ns->href);
+    }
+    return NULL;
+}
+
+char *
+sch_prefix (sch_node * node)
+{
+    xmlNode *xml = ((xmlNode *) node);
+    if (xml->ns && xml->ns->prefix)
+    {
+        return g_strdup ((char *) xml->ns->prefix);
     }
     return NULL;
 }

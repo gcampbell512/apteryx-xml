@@ -63,6 +63,9 @@ GList *sch_get_loaded_models (sch_instance * instance);
 sch_node *sch_child_first (sch_instance *instance);
 sch_node *sch_node_parent (sch_node *node);
 sch_node *sch_node_child (sch_node *parent, const char *name);
+sch_node *sch_node_namespace_child (sch_node * parent, const char *namespace, const char *child);
+sch_node *sch_node_by_namespace (sch_instance * instance, const char *namespace,
+                                 const char *prefix);
 sch_node *sch_node_child_first (sch_node * parent);
 sch_node *sch_node_next_sibling (sch_node * node);
 sch_node *sch_preorder_next (sch_node *current, sch_node *root);
@@ -73,6 +76,7 @@ char *sch_model (sch_node * node, bool ignore_ancestors);
 char *sch_organization (sch_node * node);
 char *sch_version (sch_node * node);
 char *sch_namespace (sch_node * node);
+char *sch_prefix (sch_node * node);
 char *sch_default_value (sch_node * node);
 char *sch_path (sch_node * node);
 bool sch_is_leaf (sch_node * node);
