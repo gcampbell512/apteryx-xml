@@ -32,6 +32,9 @@
 #include <jansson.h>
 #include <regex.h>
 #include <apteryx.h>
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
 #include "apteryx-xml.h"
 
 /* Error handling and debug */
@@ -60,7 +63,10 @@ typedef struct _sch_instance
     GList *models_list;
     GHashTable *map_hash_table;
     GHashTable *model_hash_table;
+    GHashTable *xlat_hash_table;
     GList *regexes;
+    /* Lua state */
+    lua_State *ls;
 } sch_instance;
 
 typedef struct _sch_xml_to_gnode_parms_s
@@ -77,6 +83,19 @@ typedef struct _sch_xml_to_gnode_parms_s
     GList *out_replaces;
 } _sch_xml_to_gnode_parms;
 
+typedef struct _sch_xlat_root
+{
+    GList *matchs;
+} sch_xlat_root;
+
+typedef struct _sch_xlat_data
+{
+    sch_xlat_root *root;
+    GNode *ext_tree;
+    GNode *int_tree;
+    int func;
+} sch_xlat_data;
+
 /* Retrieve the last error code */
 sch_err
 sch_last_err (void)
@@ -89,6 +108,49 @@ const char *
 sch_last_errmsg (void)
 {
     return tl_errmsg;
+}
+
+static char *
+first_name_in_path (const char *path)
+{
+    const char *in = path;
+    char *slash;
+    char *name;
+
+    if (!in || in[0] == '\0')
+        return NULL;
+
+    name = strdup (in);
+    slash = strchr (name + 1, '/');
+    if (slash)
+        *slash = '\0';
+    return name;
+}
+
+static void
+sch_lua_error (lua_State *ls, int res)
+{
+    switch (res)
+    {
+    case LUA_ERRRUN:
+        syslog (LOG_ERR, "LUA: %s\n", lua_tostring (ls, -1));
+        break;
+    case LUA_ERRSYNTAX:
+        syslog (LOG_ERR, "LUA: %s\n", lua_tostring (ls, -1));
+        break;
+    case LUA_ERRMEM:
+        syslog (LOG_ERR, "LUA: Memory allocation error\n");
+        break;
+    case LUA_ERRERR:
+        syslog (LOG_ERR, "LUA: Error handler error\n");
+        break;
+    case LUA_ERRFILE:
+        syslog (LOG_ERR, "LUA: Couldn't open file\n");
+        break;
+    default:
+        syslog (LOG_ERR, "LUA: Unknown error\n");
+        break;
+    }
 }
 
 /* List full paths for all schema files in the search path */
@@ -552,6 +614,25 @@ sch_load_namespace_mappings (sch_instance *instance, const char *filename)
 }
 
 static void
+free_xlat_root (gpointer data)
+{
+    sch_xlat_root *root = (sch_xlat_root *) data;
+    sch_xlat_data *xlat_data;
+    GList *list;
+
+    for (list = g_list_first (root->matchs); list; list = g_list_next (list))
+    {
+        xlat_data = list->data;
+        apteryx_free_tree (xlat_data->ext_tree);
+        apteryx_free_tree (xlat_data->int_tree);
+        g_free (xlat_data);
+        list->data = NULL;
+    }
+    g_list_free (root->matchs);
+    g_free (root);
+}
+
+static void
 sch_load_model_list (sch_instance *instance, const char *path, const char *model_list_filename)
 {
     FILE *fp = NULL;
@@ -600,6 +681,188 @@ sch_load_model_list (sch_instance *instance, const char *path, const char *model
     }
     g_free (name);
     g_free (buf);
+}
+
+static void
+sch_add_model_xlat (sch_instance *instance, int index, const char *index_str,
+                    const char *external, const char *internal, int func)
+{
+    char *name;
+    sch_xlat_root *root;
+    sch_xlat_data *xlat_data;
+    GNode *top;
+    void *old_key;
+    char *tmp;
+
+    if (!instance->xlat_hash_table)
+        instance->xlat_hash_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, free_xlat_root);
+
+    name = first_name_in_path (external);
+    xlat_data = g_malloc0 (sizeof (sch_xlat_data));
+    top = g_node_new (strdup ("/"));
+    apteryx_path_to_node (top, external, NULL);
+    if (top->children)
+    {
+        xlat_data->ext_tree = top->children;
+        g_node_unlink (xlat_data->ext_tree);
+        tmp = xlat_data->ext_tree->data;
+        xlat_data->ext_tree->data = g_strdup_printf ("/%s", tmp);
+        g_free (tmp);
+        g_free (top->data);
+        g_node_destroy (top);
+    }
+
+    top = g_node_new (strdup ("/"));
+    apteryx_path_to_node (top, internal, NULL);
+    if (top->children)
+    {
+        xlat_data->int_tree = top->children;
+        g_node_unlink (xlat_data->int_tree);
+        tmp = xlat_data->int_tree->data;
+        xlat_data->int_tree->data = g_strdup_printf ("/%s", tmp);
+        g_free (tmp);
+        g_free (top->data);
+        g_node_destroy (top);
+    }
+
+    xlat_data->func = func;
+
+    /* Look up this node name to check for duplicates. */
+    if (g_hash_table_lookup_extended (instance->xlat_hash_table, name,
+                                        &old_key, (gpointer *) &root))
+    {
+        /* insert data into GList paths */
+        xlat_data->root = root;
+        root->matchs = g_list_prepend (root->matchs, xlat_data);
+        g_free (name);
+    }
+    else
+    {
+        root = g_malloc0 (sizeof (sch_xlat_root));
+        xlat_data->root = root;
+        root->matchs = g_list_prepend (root->matchs, xlat_data);
+        g_hash_table_insert (instance->xlat_hash_table, name, root);
+    }
+}
+
+static void
+sch_load_model_translation_files (sch_instance *instance, const char *path)
+{
+    struct dirent *entry;
+    DIR *dir;
+
+    dir = opendir (path);
+    if (dir == NULL)
+        return;
+
+    /* Initialise the Lua state */
+    instance->ls = luaL_newstate ();
+    if (!instance->ls)
+    {
+        syslog (LOG_ERR, "XML: Failed to instantiate Lua interpreter\n");
+        return;
+    }
+
+    /* Load required libraries */
+    luaL_openlibs (instance->ls);
+
+    /* Load translation files */
+    for (entry = readdir (dir); entry; entry = readdir (dir))
+    {
+        const char *ext = strrchr (entry->d_name, '.');
+        if (ext && strcmp (".xlat", ext) == 0)
+        {
+            char *filename = g_strdup_printf ("%s/%s", path, entry->d_name);
+            int error;
+
+            /* Load the script and execute */
+            lua_getglobal (instance->ls, "debug");
+            lua_getfield (instance->ls, -1, "traceback");
+            error = luaL_loadfile (instance->ls, filename);
+            if (error == 0)
+                error = lua_pcall (instance->ls, 0, 1, 0);
+
+            if (error != 0)
+            {
+                sch_lua_error (instance->ls, error);
+                g_free (filename);
+                lua_pop (instance->ls, 3);
+                continue;
+            }
+
+            if (!lua_istable (instance->ls, -1))
+            {
+                g_free (filename);
+                lua_pop(instance->ls, 3);
+                continue;
+            }
+
+            lua_pushnil (instance->ls);
+            while (lua_next (instance->ls, -2) != 0)
+            {
+                int index;
+                const char *index_str = NULL;
+                const char *external = NULL;
+                const char *internal = NULL;
+                const char *key;
+                const char *value;
+                int func = LUA_REFNIL;
+
+                if (lua_isnumber (instance->ls, -2) )
+                {
+                    index = lua_tointeger (instance->ls, -2);
+                }
+                else if (lua_isstring (instance->ls, -2))
+                {
+                    index_str = lua_tostring (instance->ls, -2);
+                }
+                else
+                {
+                    lua_pop (instance->ls, 1);
+                    continue;
+                }
+
+                if (lua_istable (instance->ls, -1))
+                {
+                    lua_pushnil (instance->ls);
+                    while (lua_next (instance->ls, -2) != 0)
+                    {
+                        if (lua_isstring (instance->ls, -2))
+                        {
+                            if (lua_isstring (instance->ls, -1))
+                            {
+                                value = lua_tostring (instance->ls, -1);
+                                key = lua_tostring (instance->ls, -2);
+                                if (g_strcmp0 (key, "external") == 0)
+                                    external = value;
+                                else if (g_strcmp0 (key, "internal") == 0)
+                                    internal = value;
+                                lua_pop (instance->ls, 1);
+                            }
+                            else if (lua_isfunction (instance->ls, -1))
+                            {
+                                key = lua_tostring (instance->ls, -2);
+                                int ret_func = luaL_ref (instance->ls, LUA_REGISTRYINDEX);
+
+                                if (g_strcmp0 (key, "data_function") == 0)
+                                    func = ret_func;
+                            }
+                        }
+                        else
+                            lua_pop (instance->ls, 1);
+                    }
+
+                    if (external && internal)
+                        sch_add_model_xlat (instance, index, index_str, external, internal, func);
+                }
+                lua_pop (instance->ls, 1);
+            }
+            lua_pop (instance->ls, 3);
+            g_free (filename);
+        }
+    }
+
+    closedir (dir);
 }
 
 /* Parse all XML files in the search path and merge trees */
@@ -669,6 +932,9 @@ _sch_load (const char *path, const char *model_list_filename)
 
     /* Store a link back to the instance in the xmlDoc stucture */
     instance->doc->_private = (void *) instance;
+
+    /* Load any model translation files */
+    sch_load_model_translation_files (instance, path);
 
     return instance;
 }
@@ -755,8 +1021,13 @@ sch_free (sch_instance * instance)
             g_hash_table_destroy (instance->map_hash_table);
         if (instance->model_hash_table)
             g_hash_table_destroy (instance->model_hash_table);
+        if (instance->xlat_hash_table)
+            g_hash_table_destroy (instance->xlat_hash_table);
         if (instance->regexes)
             g_list_free_full (instance->regexes, (GDestroyNotify) free_regex);
+        if (instance->ls)
+            lua_close (instance->ls);
+
         g_free (instance);
     }
 }
@@ -2873,10 +3144,52 @@ _operation_ok (_sch_xml_to_gnode_parms *_parms, xmlNode *xml, char *curr_op, cha
 static void
 _perform_actions (_sch_xml_to_gnode_parms *_parms, int depth, char *curr_op, char *new_op, char *new_xpath)
 {
+    void *xlat_data = NULL;
+    char *tmp_xpath;
+
     /* Do nothing if not an edit, or operation not changing, unless depth is 0. */
     if (!_parms->in_is_edit || (g_strcmp0 (curr_op, new_op) == 0 && depth != 0))
     {
         return;
+    }
+
+    tmp_xpath = NULL;
+    if (_parms->in_instance->xlat_hash_table && g_strcmp0 (new_op, "merge") != 0)
+    {
+        char *name = first_name_in_path (new_xpath);
+        if (g_hash_table_lookup (_parms->in_instance->xlat_hash_table, name))
+        {
+            GNode *top = g_node_new (strdup ("/"));
+            GNode *orig_query = NULL;
+            char *tmp;
+            int flags = _parms->in_flags;
+
+            apteryx_path_to_node (top, new_xpath, NULL);
+            if (top->children)
+            {
+                orig_query = top->children;
+                g_node_unlink (orig_query);
+                tmp = orig_query->data;
+                orig_query->data = g_strdup_printf ("/%s", tmp);
+                g_free (tmp);
+                g_free (top->data);
+                g_node_destroy (top);
+            }
+            xlat_data = NULL;
+            GNode *node = sch_translate_input (_parms->in_instance, orig_query, flags, &xlat_data, NULL);
+            if (node != orig_query)
+            {
+                GNode *last = node;
+                while (last->children)
+                    last = last->children;
+                tmp_xpath = apteryx_node_path (last);
+                new_xpath = tmp_xpath;
+                apteryx_free_tree (node);
+            }
+            else
+                apteryx_free_tree (orig_query);
+        }
+        g_free (name);
     }
 
     /* Handle operations. */
@@ -2900,6 +3213,9 @@ _perform_actions (_sch_xml_to_gnode_parms *_parms, int depth, char *curr_op, cha
         _parms->out_replaces = g_list_append (_parms->out_replaces, g_strdup (new_xpath));
         DEBUG (_parms->in_flags, "replace <%s>\n", new_xpath);
     }
+
+    if (tmp_xpath)
+        g_free (tmp_xpath);
 }
 
 static GNode *
@@ -4064,4 +4380,508 @@ sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, in
         g_node_append (root, node);
     }
     return root;
+}
+
+static gpointer
+copy_node_data (gconstpointer src, gpointer dummy)
+{
+    char *data = NULL;
+
+    if (src)
+        data = g_strdup (src);
+    return data;
+}
+
+static void
+sch_translate_data (sch_instance * instance, GNode *node, sch_xlat_data *xlat_data, int flags, bool incoming)
+{
+    int ret;
+    int s_0 = lua_gettop (instance->ls);
+
+    lua_rawgeti(instance->ls, LUA_REGISTRYINDEX, xlat_data->func);
+    lua_pushstring (instance->ls, APTERYX_NAME (node));
+    lua_pushstring (instance->ls, APTERYX_NAME (node->children));
+    lua_pushstring (instance->ls, incoming ? "in" : "out");
+    ret = lua_pcall (instance->ls, 3, 1, 0);
+    if (ret)
+        sch_lua_error (instance->ls, ret);
+    else if (lua_gettop (instance->ls) != (s_0) + 1)
+    {
+        syslog (LOG_ERR, "XML LUA: Stack not zero(%d) after function\n",
+                lua_gettop (instance->ls));
+        lua_pop (instance->ls, 1);
+    }
+    else
+    {
+        const char *value = lua_tostring (instance->ls, -1);
+        char *old_value = (char *) node->children->data;
+        node->children->data = g_strdup (value);
+        DEBUG (flags, "function: old value %s new value %s\n", old_value, value);
+        g_free (old_value);
+    }
+    lua_pop (instance->ls, 1);
+}
+
+static bool
+sch_translate_child_exists (GNode *parent, char *name, GNode **ret_node)
+{
+    GNode *child;
+
+    for (child = parent->children; child; child = child->next)
+    {
+        if (g_strcmp0 (APTERYX_NAME (child), name) == 0)
+        {
+            *ret_node = child;
+            return true;
+        }
+    }
+
+    *ret_node = NULL;
+    return false;
+}
+
+static bool
+sch_translate_sibling_exists (GNode *node, char *name, GNode **ret_node)
+{
+    while (node)
+    {
+        if (g_strcmp0 (APTERYX_NAME (node), name) == 0)
+        {
+            *ret_node = node;
+            return true;
+        }
+        node = node->next;
+    }
+
+    *ret_node = NULL;
+    return false;
+}
+
+static bool
+xlat_tree_match (GNode *tree, GNode *pattern, GNode **last_match_node)
+{
+    bool match = false;
+    GNode *node1 = tree;
+    GNode *node2 = pattern;
+    GNode *ret_node;
+    GNode *last_valid_node = NULL;
+
+    while (node1 && node2)
+    {
+        match = true;
+        if (!sch_translate_sibling_exists (node1, APTERYX_NAME (node2), &ret_node) &&
+            g_strcmp0 ((char *) node2->data, "*") != 0)
+            return false;
+        if (ret_node)
+        {
+            last_valid_node = ret_node;
+            node1 = ret_node->children;
+            ret_node = NULL;
+        }
+        else
+        {
+            last_valid_node = node1;
+            node1 = node1->children;
+        }
+        node2 = node2->children;
+    }
+
+    if (node2)
+        match = false;
+    else
+        *last_match_node = last_valid_node;
+
+    return match;
+}
+
+static char *
+sch_translate_get_wildcard_data (GNode *node, GNode *tree, uint32_t pos)
+{
+    GNode *nnode = tree;
+    uint32_t matches = 0;
+
+    while (nnode && node)
+    {
+        if (g_strcmp0 (APTERYX_NAME (nnode), "*") == 0)
+        {
+            matches++;
+            if (matches == pos)
+                return g_strdup (APTERYX_NAME (node));
+        }
+
+        nnode = nnode->children;
+        node = node->children;
+    }
+    return NULL;
+}
+
+static inline gboolean
+_sch_translate_count_nodes (GNode *node, void *data)
+{
+    int *num_nodes = data;
+
+    if (node->data)
+        *num_nodes = *num_nodes + 1;
+
+    return false;
+}
+
+static inline gboolean
+_sch_translate_mark_children (GNode *node, gpointer data)
+{
+    GHashTable *node_table = data;
+    if (!g_hash_table_lookup (node_table, node))
+        g_hash_table_insert (node_table, node, node);
+
+    return false;
+}
+
+static void
+sch_translate_mark_children (GHashTable *node_table, GNode *node)
+{
+    if (node->children)
+    {
+        if (!g_hash_table_lookup (node_table, node))
+            g_node_traverse (node->children, G_PRE_ORDER, G_TRAVERSE_ALL, -1,
+                             _sch_translate_mark_children, node_table);
+    }
+}
+
+static void
+sch_translate_mark_node (GHashTable *node_table, GNode *node)
+{
+    GNode *parent;
+
+    if (!g_hash_table_lookup (node_table, node))
+    {
+        g_hash_table_insert (node_table, node, node);
+        parent = node->parent;
+        while (parent)
+        {
+            if (!g_hash_table_lookup (node_table, parent))
+                g_hash_table_insert (node_table, parent, parent);
+
+            parent = parent->parent;
+        }
+    }
+}
+
+static bool
+sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GNode *start_node,
+                             int flags, bool exact, GNode **node, sch_xlat_data *x_data,
+                             sch_node **rschema)
+{
+    GNode *nnode;
+    GNode *int_node;
+    GNode *ret_node;
+    GNode *remaining = NULL;
+    GNode *last_match_node = NULL;
+    bool match = false;
+
+    if (xlat_tree_match (start_node, x_data->ext_tree, &last_match_node))
+    {
+        if (g_hash_table_lookup (node_table, last_match_node))
+            return match;
+
+        sch_translate_mark_node (node_table, last_match_node);
+        if (last_match_node && last_match_node->children)
+        {
+            remaining = g_node_copy_deep (last_match_node->children, copy_node_data, NULL);
+            sch_translate_mark_children (node_table, last_match_node);
+        }
+
+        int_node = x_data->int_tree;
+        if (rschema && !*rschema)
+        {
+            *rschema = sch_traverse_get_schema (instance, int_node, flags);
+        }
+
+        if (!*node)
+            *node = g_node_new (g_strdup (APTERYX_NAME (int_node)));
+        nnode = *node;
+        int_node = int_node->children;
+        while (int_node)
+        {
+            if (g_strcmp0 (APTERYX_NAME (int_node), "*") == 0)
+            {
+                char *str = sch_translate_get_wildcard_data (start_node, x_data->ext_tree, 1);
+                if (sch_translate_child_exists (nnode, str, &ret_node))
+                {
+                    g_free (str);
+                    nnode = ret_node;
+                }
+                else
+                    nnode = g_node_append_data (nnode, str);
+            }
+            else
+            {
+                if (sch_translate_child_exists (nnode, APTERYX_NAME (int_node), &ret_node))
+                    nnode = ret_node;
+                else
+                    nnode = g_node_append_data (nnode, g_strdup (APTERYX_NAME (int_node)));
+            }
+
+            int_node = int_node->children;
+        }
+        if (remaining)
+        {
+            if (sch_translate_child_exists (nnode, APTERYX_NAME (remaining), &ret_node))
+            {
+                nnode = g_node_append (ret_node, remaining);
+            }
+            else
+                nnode = g_node_append (nnode, remaining);
+        }
+
+        if (x_data->func != LUA_REFNIL && nnode && nnode->data)
+            sch_translate_data (instance, nnode->parent, x_data, flags, true);
+
+        match = true;
+    }
+
+    return match;
+}
+
+GNode *
+sch_translate_input (sch_instance * instance, GNode *node, int flags, void **xlat_data, sch_node **rschema)
+{
+    GNode *ret_node = NULL;
+    char *name;
+    sch_xlat_root *root;
+    GHashTable *node_table = NULL;
+    GList *list;
+    sch_xlat_data *x_data;
+    bool match;
+    int num_nodes = 0;
+    int query_depth = 0;
+
+    *xlat_data = NULL;
+    if (!instance->xlat_hash_table || !node)
+        return node;
+
+    name = APTERYX_NAME (node);
+    root = g_hash_table_lookup (instance->xlat_hash_table, name);
+
+    if (!root)
+        return node;
+
+    if (rschema)
+    {
+        *rschema = NULL;
+        query_depth = g_node_max_height (node);
+    }
+
+    node_table = g_hash_table_new_full (g_direct_hash, g_direct_equal, NULL, NULL);
+    g_node_traverse (node, G_PRE_ORDER, G_TRAVERSE_ALL, -1, _sch_translate_count_nodes, &num_nodes);
+
+    for (list = g_list_first (root->matchs); list; list = g_list_next (list))
+    {
+        x_data = list->data;
+        match = sch_translate_input_matches (instance, node_table, node, flags, true,
+                                             &ret_node, x_data, rschema);
+        if (match)
+        {
+            if (!*xlat_data)
+                *xlat_data = x_data;
+
+            if (num_nodes <= g_hash_table_size (node_table))
+                break;
+        }
+    }
+    g_hash_table_destroy (node_table);
+
+    if (ret_node)
+    {
+        /* Restconf delete requires the translated schema node */
+        if (rschema && *rschema)
+        {
+            sch_node *schema = *rschema;
+            GNode *node1 = ret_node;
+            for (int depth = 1; depth < query_depth && node1; depth++)
+            {
+                node1 = node1->children;
+                if (node1)
+                {
+                    schema = _sch_node_child (NULL, schema, APTERYX_NAME (node1));
+                }
+            }
+            if (schema)
+                *rschema = schema;
+        }
+        apteryx_free_tree (node);
+
+        return ret_node;
+    }
+
+    return node;
+}
+
+static char *
+sch_translate_get_wildcard_data_from_bottom (GNode *node, GNode *tree)
+{
+    GNode *nnode = tree;
+
+    /* Move to the bottom of the tree */
+    while (nnode && nnode->children)
+        nnode = nnode->children;
+
+    while (nnode && node)
+    {
+        if (g_strcmp0 (APTERYX_NAME (nnode), "*") == 0)
+            return g_strdup (APTERYX_NAME (node));
+
+        nnode = nnode->parent;
+        node = node->parent;
+    }
+    return NULL;
+}
+
+static void
+sch_translate_merge_output (GNode **ret_node, GNode *node, GHashTable *node_table,
+                            sch_xlat_data *xlat_data)
+{
+    GNode *nnode;
+    GNode *node1;
+    GNode *copy;
+
+    /* Write/move down the output tree until we hit a wildcard or end of path */
+    node1 = xlat_data->ext_tree;
+    if (!*ret_node)
+        *ret_node = g_node_new (g_strdup (APTERYX_NAME (node1)));
+    nnode = *ret_node;
+    while (node1)
+    {
+        if (g_strcmp0 (APTERYX_NAME (node1), "*") == 0)
+            break;
+
+        if (nnode && g_strcmp0 (APTERYX_NAME (nnode), APTERYX_NAME (node1)) == 0)
+        {
+            if (nnode->children && node1->children && g_strcmp0 (APTERYX_NAME (node1->children), "*") != 0)
+                nnode = nnode->children;
+        }
+        else
+            nnode = g_node_append_data (nnode, g_strdup (APTERYX_NAME (node1)));
+
+        node1 = node1->children;
+    }
+
+    /* Move down the input tree until we hit a wildcard or end of path */
+    if (node1)
+    {
+        char *str = sch_translate_get_wildcard_data_from_bottom (node, xlat_data->int_tree);
+        if (str)
+        {
+            GNode *new_nnode;
+            if (sch_translate_child_exists (nnode, str, &new_nnode))
+            {
+                nnode = new_nnode;
+                g_free (str);
+            }
+            else
+                nnode = g_node_append_data (nnode, str);
+        }
+
+        node1 = node1->children;
+    }
+
+    /* We should now be synchronized at a wildcard in both int and external trees,
+       add in fields after the wild card */
+    while (node1 && node1->children)
+    {
+        GNode *new_nnode;
+
+        if (nnode && sch_translate_child_exists (nnode, APTERYX_NAME (node1), &new_nnode))
+            nnode = new_nnode;
+        else
+            nnode = g_node_append_data (nnode, g_strdup (APTERYX_NAME (node1)));
+
+        node1 = node1->children;
+    }
+
+    /* Now copy the exact match node to the output tree */
+    copy = g_node_copy_deep (node, copy_node_data, NULL);
+    sch_translate_mark_node (node_table, node);
+    sch_translate_mark_children (node_table, node);
+
+    /* Check if a field name change is required */
+    if (node1)
+    {
+        if (g_strcmp0 (APTERYX_NAME (copy), APTERYX_NAME (node1)))
+        {
+            g_free (copy->data);
+            copy->data = g_strdup (APTERYX_NAME (node1));
+        }
+    }
+
+    nnode = g_node_append (nnode, copy);
+}
+
+static void
+sch_translate_output_matches (sch_instance * instance, GNode **ret_node, GNode *node,
+                              GNode *int_node, GHashTable *node_table, int flags,
+                              sch_xlat_data *xlat_data)
+{
+    GNode *child;
+    GNode *next_child;
+
+    if (g_strcmp0 ((char *) node->data, (char *) int_node->data) &&
+        g_strcmp0 ((char *) int_node->data, "*"))
+        return;
+
+    if (!int_node->children && g_hash_table_lookup (node_table, node))
+        return;
+
+    int_node = int_node->children;
+    if (!int_node)
+    {
+        if (xlat_data->func != LUA_REFNIL && node && node->children)
+            sch_translate_data (instance, node, xlat_data, flags, false);
+
+        /* We have an exact match, translate the path into the output tree */
+        sch_translate_merge_output (ret_node, node, node_table, xlat_data);
+
+        return;
+    }
+
+    for (child = node->children; child; child = next_child)
+    {
+        next_child = child->next;
+        sch_translate_output_matches (instance, ret_node, child, int_node, node_table,
+                                      flags, xlat_data);
+    }
+}
+
+GNode *
+sch_translate_output (sch_instance * instance, GNode *node, int flags, void *xlat_data)
+{
+    sch_xlat_data *x_data = (sch_xlat_data *) xlat_data;
+    sch_xlat_root *root;
+    GList *list;
+    GHashTable *node_table = NULL;
+    int num_nodes;
+    GNode *ret_node = NULL;
+
+    if (!instance->xlat_hash_table || !node)
+        return node;
+
+    if (!x_data)
+        return node;
+
+    root = x_data->root;
+    node_table = g_hash_table_new_full (g_direct_hash, g_direct_equal, NULL, NULL);
+
+    num_nodes = g_node_n_nodes (node, G_TRAVERSE_ALL);
+    for (list = g_list_first (root->matchs); list; list = g_list_next (list))
+    {
+        x_data = list->data;
+        sch_translate_output_matches (instance, &ret_node, node, x_data->int_tree, node_table,
+                                      flags, x_data);
+        if (num_nodes <= g_hash_table_size (node_table))
+            break;
+    }
+
+    g_hash_table_destroy (node_table);
+    apteryx_free_tree (node);
+
+    return ret_node;
 }
