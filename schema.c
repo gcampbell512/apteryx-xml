@@ -96,6 +96,23 @@ typedef struct _sch_xlat_data
     int func;
 } sch_xlat_data;
 
+typedef enum
+{
+    ITEM_STATE_INIT,
+    ITEM_STATE_PENDING,
+    ITEM_STATE_DONE
+} item_state;
+
+typedef struct _sch_load_item
+{
+    char *filename;
+    char *d_name;
+    xmlDoc *doc_new;
+    GList *dependencies;
+    char *default_href;
+    item_state state;
+} sch_load_item;
+
 /* Retrieve the last error code */
 sch_err
 sch_last_err (void)
@@ -153,15 +170,88 @@ sch_lua_error (lua_State *ls, int res)
     }
 }
 
+static void
+list_doc_ns_dependencies (GList *files, sch_load_item *item)
+{
+    xmlNode *node = xmlDocGetRootElement (item->doc_new);
+    xmlNs *ns = node->nsDef;
+    GList *iter;
+    sch_load_item *list_item;
+
+    while (ns)
+    {
+        if (ns->href && strstr ((char *) ns->href, "www.w3.org/2001/XMLSchema-instance") == NULL &&
+            g_strcmp0 ((char *) ns->href, item->default_href) != 0)
+        {
+            /* Find the namespace from the loaded models default name spaces */
+            for (iter = g_list_first (files); iter; iter = g_list_next (iter))
+            {
+                list_item = iter->data;
+                if (list_item->default_href &&
+                    g_strcmp0 (list_item->default_href, (char *) ns->href) == 0)
+                {
+                    item->dependencies = g_list_append (item->dependencies, list_item);
+                    break;
+                }
+            }
+        }
+        ns = ns->next;
+    }
+}
+
+static void
+resolve_model_dependencies (GList *list, GList **sorted)
+{
+    GList *iter;
+    sch_load_item *item;
+
+    for (iter = g_list_first (list); iter; iter = g_list_next (iter))
+    {
+        item = iter->data;
+        if (item->state != ITEM_STATE_DONE)
+        {
+            if (item->state != ITEM_STATE_PENDING)
+                item->state = ITEM_STATE_PENDING;
+            else
+            {
+                /* Circular dependency - break loop */
+                return;
+            }
+
+            if (item->dependencies)
+            {
+                resolve_model_dependencies (item->dependencies, sorted);
+            }
+            item->state = ITEM_STATE_DONE;
+            *sorted = g_list_append (*sorted, item);
+        }
+    }
+}
+
+static gint
+sort_schema_files (gconstpointer a, gconstpointer b)
+{
+    const sch_load_item *item1 = a;
+    const sch_load_item *item2 = b;
+
+    return strcmp (item1->d_name, item2->d_name);
+}
+
 /* List full paths for all schema files in the search path */
 static void
-list_schema_files (GList ** files, const char *path)
+load_schema_files (GList ** files, const char *path)
 {
     DIR *dp;
     struct dirent *ep;
     char *saveptr = NULL;
     char *cpath;
     char *dpath;
+    sch_load_item *new_item;
+    sch_load_item *item;
+    GList *iter;
+    GList *sorted = NULL;
+    xmlNode *node;
+    xmlNs *ns;
 
     cpath = g_strdup (path);
     dpath = strtok_r (cpath, ":", &saveptr);
@@ -172,25 +262,63 @@ list_schema_files (GList ** files, const char *path)
         {
             while ((ep = readdir (dp)))
             {
-                char *filename;
                 if ((fnmatch ("*.xml", ep->d_name, FNM_PATHNAME) != 0) &&
                     (fnmatch ("*.xml.gz", ep->d_name, FNM_PATHNAME) != 0) &&
                     (fnmatch ("*.map", ep->d_name, FNM_PATHNAME) != 0))
                 {
                     continue;
                 }
+                new_item = g_malloc0 (sizeof (sch_load_item));
                 if (dpath[strlen (dpath) - 1] == '/')
-                    filename = g_strdup_printf ("%s%s", dpath, ep->d_name);
+                    new_item->filename = g_strdup_printf ("%s%s", dpath, ep->d_name);
                 else
-                    filename = g_strdup_printf ("%s/%s", dpath, ep->d_name);
-                *files = g_list_append (*files, filename);
+                    new_item->filename = g_strdup_printf ("%s/%s", dpath, ep->d_name);
+                new_item->d_name = g_strdup (ep->d_name);
+                if (fnmatch ("*.map", ep->d_name, FNM_PATHNAME) != 0)
+                {
+                    new_item->doc_new = xmlParseFile (new_item->filename);
+                    if (new_item->doc_new == NULL)
+                    {
+                        syslog (LOG_ERR, "XML: failed to parse \"%s\"", new_item->filename);
+                        g_free (new_item->filename);
+                        g_free (new_item);
+                        continue;
+                    }
+                }
+                *files = g_list_append (*files, new_item);
             }
             (void) closedir (dp);
         }
         dpath = strtok_r (NULL, ":", &saveptr);
     }
     free (cpath);
-    *files = g_list_sort (*files, (GCompareFunc) strcasecmp);
+    *files = g_list_sort (*files, sort_schema_files);
+
+    /* Get the default href for the models */
+    for (iter = g_list_first (*files); iter; iter = g_list_next (iter))
+    {
+        item = iter->data;
+        if (item->doc_new)
+        {
+            node = xmlDocGetRootElement (item->doc_new);
+            ns = xmlSearchNs (item->doc_new, node, NULL);
+            if (ns)
+                item->default_href = (char *) ns->href;
+        }
+    }
+
+    /* Record any model dependencies */
+    for (iter = g_list_first (*files); iter; iter = g_list_next (iter))
+    {
+        item = iter->data;
+        if (item->default_href)
+            list_doc_ns_dependencies (*files, item);
+    }
+
+    resolve_model_dependencies (*files, &sorted);
+    g_list_free (*files);
+    *files = sorted;
+
     return;
 }
 
@@ -242,7 +370,7 @@ insert_in_order (xmlNs *ns, xmlNode *parent, xmlNode *child)
         if (child->parent)
             xmlUnlinkNode (child);
         // printf ("Adding %s after %s\n", xmlGetProp (child, (xmlChar *)"name"), xmlGetProp (sibling, (xmlChar *)"name"));
-        xmlAddPrevSibling (sibling, child);
+        xmlAddNextSibling (sibling, child);
     }
     else if (!child->parent)
     {
@@ -865,6 +993,16 @@ sch_load_model_translation_files (sch_instance *instance, const char *path)
     closedir (dir);
 }
 
+void
+sch_load_item_free (void *data)
+{
+    sch_load_item *item = data;
+    g_free (item->filename);
+    g_free (item->d_name);
+    g_list_free (item->dependencies);
+    g_free (item);
+}
+
 /* Parse all XML files in the search path and merge trees */
 static sch_instance *
 _sch_load (const char *path, const char *model_list_filename)
@@ -891,23 +1029,23 @@ _sch_load (const char *path, const char *model_list_filename)
     if (model_list_filename)
         sch_load_model_list (instance, path, model_list_filename);
 
-    list_schema_files (&files, path);
+    load_schema_files (&files, path);
     for (iter = files; iter; iter = g_list_next (iter))
     {
-        char *filename = (char *) iter->data;
-        char *ext = strrchr(filename, '.');
+        sch_load_item *item;
+        char *filename;
+        char *ext;
+
+        item = iter->data;
+        filename = item->filename;
+        ext = strrchr(filename, '.');
         if (g_strcmp0 (ext, ".map") == 0)
         {
             sch_load_namespace_mappings (instance, filename);
             continue;
         }
-        xmlDoc *doc_new = xmlParseFile (filename);
-        if (doc_new == NULL)
-        {
-            syslog (LOG_ERR, "XML: failed to parse \"%s\"", filename);
-            continue;
-        }
-        xmlNode *module_new = xmlDocGetRootElement (doc_new);
+
+        xmlNode *module_new = xmlDocGetRootElement (item->doc_new);
         cleanup_nodes (module_new);
         /* Sanity check for empty modules */
         if (!module_new || (module_new->children && (module_new->children->name[0] != 'N' && module_new->children->name[0] != 'S')))
@@ -920,15 +1058,17 @@ _sch_load (const char *path, const char *model_list_filename)
         {
             add_module_info_to_child (instance, module_new);
             merge_nodes (module_new->ns, module, module->children, module_new->children, 0);
-            xmlFreeDoc (doc_new);
+            xmlFreeDoc (item->doc_new);
+            item->doc_new = NULL;
             assign_ns_to_root (instance->doc, module->children);
         }
         else
         {
-            xmlFreeDoc (doc_new);
+            xmlFreeDoc (item->doc_new);
+            item->doc_new = NULL;
         }
     }
-    g_list_free_full (files, free);
+    g_list_free_full (files, sch_load_item_free);
 
     /* Store a link back to the instance in the xmlDoc stucture */
     instance->doc->_private = (void *) instance;
