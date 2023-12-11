@@ -4042,10 +4042,11 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags, int depth, in
     }
 
     /* Prune empty branches (unless it's a presence container) */
-    if (child && !child->children && !sch_is_leaf (schema) &&
-        ((((xmlNode *)schema)->children) || (flags & SCH_F_TRIM_DEFAULTS)))
+    if (child && !child->children && !sch_is_leaf (schema))
     {
-        if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
+        xmlNode *children = ((xmlNode *)schema)->children;
+        if ((!children && (flags & SCH_F_ADD_DEFAULTS)) ||
+            children || (flags & SCH_F_TRIM_DEFAULTS))
         {
             DEBUG (flags, "Throwing away node \"%s\"\n", APTERYX_NAME (child));
             free ((void *)child->data);
@@ -4069,7 +4070,7 @@ sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int
         {
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                rc = _sch_traverse_nodes (s, node, flags, 0, rdepth);
+                rc = _sch_traverse_nodes (s, node, flags, 1, rdepth);
                 if (!rc)
                     break;
             }
