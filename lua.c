@@ -37,8 +37,6 @@ static bool apteryx_xml_debug = false;
         printf (fmt, ## args); \
     }
 
-/* Global pointer to the loaded schema */
-static sch_instance *api = NULL;
 /* A root user can write to read-only fields */
 static bool is_root = true;
 
@@ -116,11 +114,31 @@ push_node (lua_State * L, sch_instance * api, const char *path, const char *key)
     return true;
 }
 
+static sch_instance *
+_get_api (lua_State *L)
+{
+    lua_pushstring(L, "__apteryx_api");
+    lua_gettable(L, LUA_REGISTRYINDEX);
+    sch_instance *api = (sch_instance *)lua_topointer(L, -1);
+    lua_pop(L, 1);
+    return api;
+}
+
+static void
+_set_api (lua_State *L, sch_instance *api)
+{
+    lua_pushstring(L, "__apteryx_api");
+    lua_pushlightuserdata(L, api);
+    lua_settable(L, LUA_REGISTRYINDEX);
+    lua_pop(L, 1);
+}
+
 static int
 __index (lua_State * L)
 {
     const char *path;
     const char *key;
+    sch_instance *api = _get_api(L);
 
     /* If no API, this key does not exist! */
     if (!api)
@@ -165,6 +183,7 @@ __newindex (lua_State * L)
     const char *key;
     const char *value;
     char *name;
+    sch_instance *api = _get_api (L);
 
     /* If no API, this key does not exist! */
     if (!api)
@@ -227,6 +246,7 @@ __call (lua_State * L)
     const char *path;
     const char *key;
     const char *value;
+    sch_instance *api = _get_api (L);
 
     /* If no API, this key does not exist! */
     if (!api)
@@ -331,7 +351,9 @@ lua_apteryx_api (lua_State * L)
         {"__call", __call},
         {NULL, NULL}
     };
+    sch_instance *api = _get_api (L);
     const char *path = ".";
+
     if (lua_gettop (L) == 1 && lua_isstring (L, 1))
     {
         path = lua_tostring (L, 1);
@@ -345,6 +367,7 @@ lua_apteryx_api (lua_State * L)
 
     /* Parse XML files in the specified directory */
     api = sch_load (path);
+    _set_api (L, api);
     if (!api)
     {
         /* No good */
@@ -371,6 +394,7 @@ lua_apteryx_valid (lua_State * L)
         luaL_error (L, "Invalid arguments: requires path");
         return 0;
     }
+    sch_instance *api = _get_api (L);
 
     /* If no API, this path does not exist! */
     if (api && sch_lookup (api, lua_tostring (L, 1)))
