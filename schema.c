@@ -3931,7 +3931,8 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags, int depth, in
         }
         else if (flags & SCH_F_ADD_DEFAULTS)
         {
-            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
+            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth ||
+                (depth == rdepth - 1 && child && g_strcmp0(name, APTERYX_NAME (child)) == 0)))
             {
                 /* We do not need to do anything at all if this leaf does not have a default */
                 char *value = sch_translate_from (schema, sch_default_value (schema));
