@@ -28,7 +28,7 @@ end
 return {
     {
         external = '/xlat-test/xlat-animals',
-        internal = '/test/animals/animal',
+        internal = '/test/animals',
     },
     {
         external = '/xlat-test/xlat-animals/xlat-animal',
@@ -52,7 +52,23 @@ return {
         internal = '/test/animals/animal/*/food',
     },
     {
+        external = '/xlat-test/xlat-animals/xlat-animal/*/food/pet/pet',
+        internal = '/test/animals/animal/*/name',
+    },
+    {
+        external = '/xlat-test/xlat-animals/xlat-animal/*/food/*/name',
+        internal = '/test/animals/animal/*/food/*/name',
+    },
+    {
+        external = '/xlat-test/xlat-animals/xlat-animal/*/food/*/type',
+        internal = '/test/animals/animal/*/food/*/type',
+    },
+    {
         external = '/xlat-test/xlat-animals/xlat-animal/*/toys',
         internal = '/test/animals/animal/*/toys',
+    },
+    {
+        external = '/xlat-test/xlat-animals/xlat-animal/*/toys/toy',
+        internal = '/test/animals/animal/*/toys/toy',
     },
 }

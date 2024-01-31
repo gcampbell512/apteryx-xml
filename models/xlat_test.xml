@@ -18,6 +18,7 @@
                         <NODE name="*" help="This is a list of food">
                             <NODE name="name" mode="rw" help="Food name" />
                             <NODE name="type" mode="rw" help="Food type" />
+                            <NODE name="pet" mode="rw" help="Name of animal" />
                         </NODE>
                     </NODE>
                     <NODE name="toys">

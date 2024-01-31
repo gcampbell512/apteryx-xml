@@ -119,7 +119,8 @@ bool sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node
 GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char * path, int flags); //DEPRECATED
 GNode *sch_translate_input (sch_instance * instance, GNode *node, int flags,
                             void **xlat_data, sch_node **rschema);
-GNode *sch_translate_output (sch_instance * instance, GNode *node, int flags, void *xlat_data);
+GNode *sch_translate_output (sch_instance * instance, GNode *node, GNode *query, int flags, void *xlat_data);
+GNode *sch_translate_copy_query (GNode *query);
 
 /*
  * Netconf error handling

@@ -4650,9 +4650,18 @@ sch_translate_get_wildcard_data (GNode *node, GNode *tree, uint32_t pos)
             if (matches == pos)
                 return g_strdup (APTERYX_NAME (node));
         }
+        else
+        {
+            while (node && g_strcmp0 (APTERYX_NAME (nnode), APTERYX_NAME (node)))
+            {
+                node = node->next;
+            }
+        }
+
+        if (node)
+            node = node->children;
 
         nnode = nnode->children;
-        node = node->children;
     }
     return NULL;
 }
@@ -4719,6 +4728,7 @@ sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GN
     GNode *remaining = NULL;
     GNode *last_match_node = NULL;
     bool match = false;
+    uint32_t pos = 1;
 
     if (xlat_tree_match (start_node, x_data->ext_tree, &last_match_node))
     {
@@ -4746,7 +4756,7 @@ sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GN
         {
             if (g_strcmp0 (APTERYX_NAME (int_node), "*") == 0)
             {
-                char *str = sch_translate_get_wildcard_data (start_node, x_data->ext_tree, 1);
+                char *str = sch_translate_get_wildcard_data (start_node, x_data->ext_tree, pos++);
                 if (sch_translate_child_exists (nnode, str, &ret_node))
                 {
                     g_free (str);
@@ -4767,12 +4777,15 @@ sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GN
         }
         if (remaining)
         {
-            if (sch_translate_child_exists (nnode, APTERYX_NAME (remaining), &ret_node))
+            if (remaining->data &&
+                sch_translate_child_exists (nnode, APTERYX_NAME (remaining), &ret_node))
             {
                 nnode = g_node_append (ret_node, remaining);
             }
-            else
+            else if (!nnode->children || nnode->children->data)
                 nnode = g_node_append (nnode, remaining);
+            else
+                apteryx_free_tree (remaining);
         }
 
         if (x_data->func != LUA_REFNIL && nnode && nnode->data)
@@ -4858,10 +4871,11 @@ sch_translate_input (sch_instance * instance, GNode *node, int flags, void **xla
     return node;
 }
 
-static char *
+static GList *
 sch_translate_get_wildcard_data_from_bottom (GNode *node, GNode *tree)
 {
     GNode *nnode = tree;
+    GList *list = NULL;
 
     /* Move to the bottom of the tree */
     while (nnode && nnode->children)
@@ -4870,21 +4884,66 @@ sch_translate_get_wildcard_data_from_bottom (GNode *node, GNode *tree)
     while (nnode && node)
     {
         if (g_strcmp0 (APTERYX_NAME (nnode), "*") == 0)
-            return g_strdup (APTERYX_NAME (node));
+        {
+            list = g_list_prepend (list, g_strdup (APTERYX_NAME (node)));
+        }
 
         nnode = nnode->parent;
         node = node->parent;
     }
-    return NULL;
+    return list;
 }
 
 static void
-sch_translate_merge_output (GNode **ret_node, GNode *node, GHashTable *node_table,
-                            sch_xlat_data *xlat_data)
+sch_translate_merge_trees (GNode *node1, GNode *node2)
+{
+    GNode *child1;
+    GNode *child2;
+    GNode *copy;
+
+    for (child1 = node1->children; child1; child1 = child1->next)
+    {
+        /* Match child1 to a child of node2. If matched descend down the tree. */
+        for (child2 = node2->children; child2; child2 = child2->next)
+        {
+            if (g_strcmp0 (APTERYX_NAME (child2), "*") != 0 &&
+                g_strcmp0 (APTERYX_NAME (child1), APTERYX_NAME (child2)) == 0)
+            {
+                sch_translate_merge_trees (child1, child2);
+                break;
+            }
+        }
+    }
+
+    for (child2 = node2->children; child2; child2 = child2->next)
+    {
+        if (g_strcmp0 (APTERYX_NAME (child2), "*") == 0)
+            continue;
+
+        /* Match child2 to a child of node1. If not matched add the child2 tree
+         * to the parent node1. */
+        for (child1 = node1->children; child1; child1 = child1->next)
+        {
+            if (g_strcmp0 (APTERYX_NAME (child1), APTERYX_NAME (child2)) == 0)
+                break;
+        }
+
+        if (!child1)
+        {
+            copy = g_node_copy_deep (child2, copy_node_data, NULL);
+            g_node_append (node1, copy);
+        }
+    }
+}
+
+static void
+sch_translate_merge_output (GNode **ret_node, GNode *node, sch_xlat_data *xlat_data)
 {
     GNode *nnode;
     GNode *node1;
-    GNode *copy;
+    uint32_t pos = 0;
+    GList *key_list = NULL;
+    GList *list;
 
     /* Write/move down the output tree until we hit a wildcard or end of path */
     node1 = xlat_data->ext_tree;
@@ -4907,70 +4966,90 @@ sch_translate_merge_output (GNode **ret_node, GNode *node, GHashTable *node_tabl
         node1 = node1->children;
     }
 
-    /* Move down the input tree until we hit a wildcard or end of path */
-    if (node1)
-    {
-        char *str = sch_translate_get_wildcard_data_from_bottom (node, xlat_data->int_tree);
-        if (str)
-        {
-            GNode *new_nnode;
-            if (sch_translate_child_exists (nnode, str, &new_nnode))
-            {
-                nnode = new_nnode;
-                g_free (str);
-            }
-            else
-                nnode = g_node_append_data (nnode, str);
-        }
-
-        node1 = node1->children;
-    }
+    if (!node1)
+        return;
 
     /* We should now be synchronized at a wildcard in both int and external trees,
        add in fields after the wild card */
+    if (node1)
+        key_list = sch_translate_get_wildcard_data_from_bottom (node, xlat_data->int_tree);
+
     while (node1 && node1->children)
     {
         GNode *new_nnode;
 
-        if (nnode && sch_translate_child_exists (nnode, APTERYX_NAME (node1), &new_nnode))
-            nnode = new_nnode;
+        if (g_strcmp0 (APTERYX_NAME (node1), "*") == 0)
+        {
+            char *str = NULL;
+            if (key_list)
+            {
+                list = g_list_nth (key_list, pos++);
+                if (list)
+                    str = list->data;
+            }
+
+            if (str)
+            {
+                if (sch_translate_child_exists (nnode, str, &new_nnode))
+                    nnode = new_nnode;
+                else
+                    nnode = g_node_append_data (nnode, g_strdup (str));
+            }
+        }
         else
-            nnode = g_node_append_data (nnode, g_strdup (APTERYX_NAME (node1)));
+        {
+            if (nnode && sch_translate_child_exists (nnode, APTERYX_NAME (node1), &new_nnode))
+                nnode = new_nnode;
+            else
+                nnode = g_node_append_data (nnode, g_strdup (APTERYX_NAME (node1)));
+        }
 
         node1 = node1->children;
     }
 
     /* Now copy the exact match node to the output tree */
-    copy = g_node_copy_deep (node, copy_node_data, NULL);
-    sch_translate_mark_node (node_table, node);
-    sch_translate_mark_children (node_table, node);
-
-    /* Check if a field name change is required */
-    if (node1)
+    if (nnode && node)
     {
-        if (g_strcmp0 (APTERYX_NAME (copy), APTERYX_NAME (node1)))
+        GNode *new_nnode;
+        GNode *tmp = NULL;
+
+        if (node1)
         {
-            g_free (copy->data);
-            copy->data = g_strdup (APTERYX_NAME (node1));
+            if (g_strcmp0 (APTERYX_NAME (node), APTERYX_NAME (node1)))
+            {
+                tmp = g_node_new (g_strdup (APTERYX_NAME (node1)));
+                tmp->children = node->children;
+                node = tmp;
+            }
+        }
+
+        if (nnode && sch_translate_child_exists (nnode, APTERYX_NAME (node), &new_nnode))
+            nnode = new_nnode;
+        else
+            nnode = g_node_append_data (nnode, g_strdup (APTERYX_NAME (node)));
+
+        sch_translate_merge_trees (nnode, node);
+        if (tmp)
+        {
+            g_free (tmp->data);
+            tmp->children = NULL;
+            g_node_destroy (tmp);
         }
     }
 
-    nnode = g_node_append (nnode, copy);
+    if (key_list)
+        g_list_free_full (key_list, g_free);
 }
 
 static void
 sch_translate_output_matches (sch_instance * instance, GNode **ret_node, GNode *node,
-                              GNode *int_node, GHashTable *node_table, int flags,
-                              sch_xlat_data *xlat_data)
+                              GNode *int_node, int flags, sch_xlat_data *xlat_data)
 {
     GNode *child;
     GNode *next_child;
 
     if (g_strcmp0 ((char *) node->data, (char *) int_node->data) &&
-        g_strcmp0 ((char *) int_node->data, "*"))
-        return;
-
-    if (!int_node->children && g_hash_table_lookup (node_table, node))
+        g_strcmp0 ((char *) int_node->data, "*") && g_strcmp0 ((char *) node->data, "*"))
         return;
 
     int_node = int_node->children;
@@ -4980,27 +5059,48 @@ sch_translate_output_matches (sch_instance * instance, GNode **ret_node, GNode *
             sch_translate_data (instance, node, xlat_data, flags, false);
 
         /* We have an exact match, translate the path into the output tree */
-        sch_translate_merge_output (ret_node, node, node_table, xlat_data);
-
+        sch_translate_merge_output (ret_node, node, xlat_data);
         return;
     }
 
     for (child = node->children; child; child = next_child)
     {
         next_child = child->next;
-        sch_translate_output_matches (instance, ret_node, child, int_node, node_table,
-                                      flags, xlat_data);
+        sch_translate_output_matches (instance, ret_node, child, int_node, flags, xlat_data);
     }
 }
 
+static bool
+sch_translate_x_data_match (GNode *node, GNode *ext_node)
+{
+    GNode *child;
+    bool ret = false;
+
+    if (g_strcmp0 ((char *) node->data, (char *) ext_node->data) &&
+        g_strcmp0 ((char *) ext_node->data, "*") && g_strcmp0 ((char *) node->data, "*"))
+        return false;
+
+    if (!node->children || !node->children->data)
+        return true;
+
+    ext_node = ext_node->children;
+    if (!ext_node)
+        return false;
+
+    for (child = node->children; child && !ret; child = child->next)
+    {
+        ret = sch_translate_x_data_match (child, ext_node);
+    }
+
+    return ret;
+}
+
 GNode *
-sch_translate_output (sch_instance * instance, GNode *node, int flags, void *xlat_data)
+sch_translate_output (sch_instance * instance, GNode *node, GNode *query, int flags, void *xlat_data)
 {
     sch_xlat_data *x_data = (sch_xlat_data *) xlat_data;
     sch_xlat_root *root;
     GList *list;
-    GHashTable *node_table = NULL;
-    int num_nodes;
     GNode *ret_node = NULL;
 
     if (!instance->xlat_hash_table || !node)
@@ -5010,20 +5110,51 @@ sch_translate_output (sch_instance * instance, GNode *node, int flags, void *xla
         return node;
 
     root = x_data->root;
-    node_table = g_hash_table_new_full (g_direct_hash, g_direct_equal, NULL, NULL);
 
-    num_nodes = g_node_n_nodes (node, G_TRAVERSE_ALL);
     for (list = g_list_first (root->matchs); list; list = g_list_next (list))
     {
         x_data = list->data;
-        sch_translate_output_matches (instance, &ret_node, node, x_data->int_tree, node_table,
-                                      flags, x_data);
-        if (num_nodes <= g_hash_table_size (node_table))
-            break;
+        if (sch_translate_x_data_match (query, x_data->ext_tree))
+        {
+            sch_translate_output_matches (instance, &ret_node, node, x_data->int_tree,
+                                          flags, x_data);
+        }
     }
 
-    g_hash_table_destroy (node_table);
     apteryx_free_tree (node);
 
     return ret_node;
+}
+
+static gboolean
+sch_remove_null_data (GNode *node, gpointer data)
+{
+    if (node->data == NULL)
+    {
+        g_node_unlink (node);
+        g_node_destroy (node);
+    }
+    return false;
+}
+
+static gboolean
+sch_remove_star_data (GNode *node, gpointer data)
+{
+    if (node->data && g_strcmp0 (node->data, "*") == 0)
+    {
+        g_free (node->data);
+        g_node_unlink (node);
+        g_node_destroy (node);
+    }
+    return false;
+}
+
+GNode *
+sch_translate_copy_query (GNode *query)
+{
+    GNode *copy = g_node_copy_deep (query, copy_node_data, NULL);
+    g_node_traverse (copy, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, sch_remove_null_data, NULL);
+    g_node_traverse (copy, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, sch_remove_star_data, NULL);
+
+    return copy;
 }
