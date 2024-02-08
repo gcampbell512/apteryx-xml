@@ -12,7 +12,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Install dependencies
-      run: sudo apt-get install -y build-essential libglib2.0-dev libxml2-dev libcunit1-dev libjansson-dev liblua5.3-dev
+      run: sudo apt-get install -y build-essential libglib2.0-dev libxml2-dev libcunit1-dev libjansson-dev liblua5.3-dev valgrind
     - name: Clone apteryx
       uses: actions/checkout@v2
       with:
@@ -20,7 +20,9 @@ jobs:
         path: apteryx
     - name: Build Apteryx
       run: make -C ./apteryx
-    - name: Build
-      run: APTERYX_PATH=./apteryx make
+    - name: Build apteryx-xml and unit tests
+      run: APTERYX_PATH=./apteryx make unittest
+    - name: Run Apteryxd
+      run: LD_LIBRARY_PATH=./apteryx ./apteryx/apteryxd -b
     - name: Run tests
-      run: APTERYX_PATH=./apteryx make test
+      run: LD_LIBRARY_PATH=./apteryx:. G_SLICE=always-malloc valgrind --keep-debuginfo=yes --leak-check=full --error-exitcode=1 ./unittest
