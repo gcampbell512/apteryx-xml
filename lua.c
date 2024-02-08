@@ -409,6 +409,19 @@ lua_apteryx_valid (lua_State * L)
     return 1;
 }
 
+static int
+luaclose_libapteryx_xml (lua_State *L)
+{
+    sch_instance *api = _get_api (L);
+    if (api)
+    {
+        sch_free (api);
+        _set_api (L, NULL);
+    }
+    apteryx_shutdown ();
+    return 0;
+}
+
 int
 luaopen_libapteryx_xml (lua_State * L)
 {
@@ -427,8 +440,11 @@ luaopen_libapteryx_xml (lua_State * L)
     }
 
     /* Return the Apteryx object on the stack */
-    luaL_newmetatable (L, "apteryx");
+    luaL_newmetatable (L, "apteryx_xml");
     luaL_setfuncs (L, _apteryx_fns, 0);
+    lua_pushcfunction (L, luaclose_libapteryx_xml);
+    lua_setfield (L, -2, "__gc");
+    luaL_setmetatable (L, "apteryx_xml");
     return 1;
 }
 

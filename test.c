@@ -414,6 +414,9 @@ main (int argc, char *argv[])
     /* Make some random numbers */
     srand (time (NULL));
 
+    /* Need native library for tests */
+    apteryx_init (false);
+
     /* Add tests */
     CU_SuiteInfo *suite = &suites[0];
     while (suite && suite->pName)
@@ -453,5 +456,6 @@ main (int argc, char *argv[])
     CU_set_error_action (CUEA_IGNORE);
     CU_basic_run_tests ();
     CU_cleanup_registry ();
+    apteryx_shutdown ();
     return 0;
 }
