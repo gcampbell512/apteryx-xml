@@ -4534,15 +4534,16 @@ copy_node_data (gconstpointer src, gpointer dummy)
     return data;
 }
 
-static void
+static const char *
 sch_translate_data (sch_instance * instance, GNode *node, sch_xlat_data *xlat_data, int flags, bool incoming)
 {
+    const char *value = NULL;
     int ret;
     int s_0 = lua_gettop (instance->ls);
 
     lua_rawgeti(instance->ls, LUA_REGISTRYINDEX, xlat_data->func);
+    lua_pushstring (instance->ls, APTERYX_NAME (node->parent));
     lua_pushstring (instance->ls, APTERYX_NAME (node));
-    lua_pushstring (instance->ls, APTERYX_NAME (node->children));
     lua_pushstring (instance->ls, incoming ? "in" : "out");
     ret = lua_pcall (instance->ls, 3, 1, 0);
     if (ret)
@@ -4555,13 +4556,11 @@ sch_translate_data (sch_instance * instance, GNode *node, sch_xlat_data *xlat_da
     }
     else
     {
-        const char *value = lua_tostring (instance->ls, -1);
-        char *old_value = (char *) node->children->data;
-        node->children->data = g_strdup (value);
-        DEBUG (flags, "function: old value %s new value %s\n", old_value, value);
-        g_free (old_value);
+        value = lua_tostring (instance->ls, -1);
+        DEBUG (flags, "function: old value %s new value %s\n", (char *) node->data, value);
     }
     lua_pop (instance->ls, 1);
+    return value;
 }
 
 static bool
@@ -4727,6 +4726,7 @@ sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GN
     GNode *ret_node;
     GNode *remaining = NULL;
     GNode *last_match_node = NULL;
+    const char *value;
     bool match = false;
     uint32_t pos = 1;
 
@@ -4788,8 +4788,16 @@ sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GN
                 apteryx_free_tree (remaining);
         }
 
-        if (x_data->func != LUA_REFNIL && nnode && nnode->data)
-            sch_translate_data (instance, nnode->parent, x_data, flags, true);
+        if (x_data->func != LUA_REFNIL && nnode && nnode->children)
+        {
+            value = sch_translate_data (instance, nnode->children, x_data, flags, true);
+            if (value)
+            {
+                char *old_value = (char *) nnode->children->data;
+                nnode->children->data = g_strdup (value);
+                g_free (old_value);
+            }
+        }
 
         match = true;
     }
@@ -5047,6 +5055,8 @@ sch_translate_output_matches (sch_instance * instance, GNode **ret_node, GNode *
 {
     GNode *child;
     GNode *next_child;
+    const char *value = NULL;
+    char *old_value = NULL;
 
     if (g_strcmp0 ((char *) node->data, (char *) int_node->data) &&
         g_strcmp0 ((char *) int_node->data, "*") && g_strcmp0 ((char *) node->data, "*"))
@@ -5056,10 +5066,22 @@ sch_translate_output_matches (sch_instance * instance, GNode **ret_node, GNode *
     if (!int_node)
     {
         if (xlat_data->func != LUA_REFNIL && node && node->children)
-            sch_translate_data (instance, node, xlat_data, flags, false);
-
+        {
+            value = sch_translate_data (instance, node->children, xlat_data, flags, false);
+            if (value)
+            {
+                old_value = (char *) node->children->data;
+                node->children->data = g_strdup (value);
+            }
+        }
         /* We have an exact match, translate the path into the output tree */
         sch_translate_merge_output (ret_node, node, xlat_data);
+        if (old_value)
+        {
+            /* Put the original value back into the result tree we are translating */
+            g_free ((void *) node->children->data);
+            node->children->data = old_value;
+        }
         return;
     }
 
