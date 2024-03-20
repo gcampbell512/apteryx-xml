@@ -173,7 +173,20 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
     # Default value
     def_val = node.search_one('default')
     if def_val is not None:
-        if ntype is not None and 'int' in ntype.arg:
+        # For enums the default is the associated value
+        if ntype is not None and ntype.arg == 'enumeration':
+            enum = next((x for x in ntype.substmts if x.arg == def_val.arg), None)
+            if enum:
+                val = enum.search_one('value')
+                if val:
+                    fd.write('#define ' + define + '_DEFAULT ' + str(val.arg) + '\n')
+                elif ctx.opts.enum_name:
+                    fd.write('#define ' + define + '_DEFAULT "' + def_val.arg + '"\n')
+                else:
+                    fd.write('#define ' + define + '_DEFAULT ' + str(ntype.substmts.index(enum)) + '\n')
+            else:
+                raise Exception("Could not find default \"" + def_val.arg + "\" in " + str(node))
+        elif ntype is not None and 'int' in ntype.arg:
             fd.write('#define ' + define + '_DEFAULT ' + def_val.arg + '\n')
         else:
             fd.write('#define ' + define + '_DEFAULT "' + def_val.arg + '"\n')
