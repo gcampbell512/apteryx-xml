@@ -21,9 +21,13 @@ class PathPlugin(plugin.PyangPlugin):
                                  dest="prefix_default",
                                  default=False,
                                  help="Add a model prefix to the generated header file."),
+            optparse.make_option("--cpaths-enum-name",
+                                 action="store_true",
+                                 dest="enum_name",
+                                 default=False,
+                                 help="Use the enum name as the value unless specified"),
             ]
-        g = optparser.add_option_group(
-            "generate-prefix option")
+        g = optparser.add_option_group("cpaths specific options")
         g.add_options(optlist)
 
     def add_output_format(self, fmts):
@@ -103,8 +107,12 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
         pathstr = statements.mk_path_str(node, False)
     if prefix is not None:
         pathstr = '_' + prefix + pathstr
-    if node.keyword == 'container' or node.keyword == 'list':
+    if node.keyword in ('container', 'list'):
         define = pathstr[1:].upper().replace('/', '_').replace('-', '_') + '_PATH'
+    # Hack to stop duplicate defines when list variable is called "path"
+    elif node.parent.keyword in ('list', 'container') and (value.upper() == 'PATH' or value.upper().endswith('/PATH')):
+        sc = pathstr[1:].count('/')
+        define = pathstr[1:].upper().replace('/', '_', sc - 1).replace('/', '__').replace('-', '_')
     else:
         define = pathstr[1:].upper().replace('/', '_').replace('-', '_')
 
@@ -156,7 +164,10 @@ def print_node(node, module, prefix, fd, ctx, level=0, strip=0):
                     if val_int is not None:
                         count = val_int
                 else:
-                    fd.write('#define ' + define + '_' + name + ' ' + str(count) + '\n')
+                    if ctx.opts.enum_name:
+                        fd.write('#define ' + define + '_' + name + ' "' + enum.arg + '"\n')
+                    else:
+                        fd.write('#define ' + define + '_' + name + ' ' + str(count) + '\n')
                 count = count + 1
 
     # Default value
