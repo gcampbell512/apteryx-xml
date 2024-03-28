@@ -4766,10 +4766,10 @@ sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GN
             if (remaining->data &&
                 sch_translate_child_exists (nnode, APTERYX_NAME (remaining), &ret_node))
             {
-                nnode = g_node_append (ret_node, remaining);
+                g_node_append (ret_node, remaining);
             }
             else if (!nnode->children || nnode->children->data)
-                nnode = g_node_append (nnode, remaining);
+                g_node_append (nnode, remaining);
             else
                 apteryx_free_tree (remaining);
         }
