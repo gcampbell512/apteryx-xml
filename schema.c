@@ -4767,6 +4767,7 @@ sch_translate_input_matches (sch_instance * instance, GHashTable *node_table, GN
                 sch_translate_child_exists (nnode, APTERYX_NAME (remaining), &ret_node))
             {
                 g_node_append (ret_node, remaining);
+                nnode = ret_node;
             }
             else if (!nnode->children || nnode->children->data)
                 g_node_append (nnode, remaining);
