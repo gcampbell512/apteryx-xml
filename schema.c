@@ -3406,10 +3406,36 @@ _sch_xml_to_gnode (_sch_xml_to_gnode_parms *_parms, sch_node * schema, xmlNs *ns
     /* LIST */
     if (sch_is_leaf_list (schema))
     {
+        char *old_xpath = new_xpath;
+        char *key_value = NULL;
+
         DEBUG (_parms->in_flags, "%*s%s%s\n", depth * 2, " ", depth ? "" : "/", name);
         tree = APTERYX_NODE (NULL, g_strdup (name));
-        node = APTERYX_NODE (tree, g_strdup ("*"));
         schema = sch_node_child_first (schema);
+
+        if (xml_node_has_content (xml))
+        {
+            key_value = (char *) xmlNodeGetContent (xml);
+            if (g_strcmp0 (new_op, "delete") == 0 || g_strcmp0 (new_op, "remove") == 0 ||
+                g_strcmp0 (new_op, "none") == 0)
+            {
+                new_xpath = g_strdup_printf ("%s/%s", old_xpath, key_value);
+            }
+            else
+            {
+                new_xpath = g_strdup_printf ("%s/%s/%s", old_xpath, key_value, key_value);
+                node = APTERYX_NODE (tree, g_strdup (key_value));
+                node = APTERYX_NODE (node, g_strdup (key_value));
+            }
+            g_free (key_value);
+            g_free (old_xpath);
+            ret_tree = true;
+        }
+        else
+        {
+            node = APTERYX_NODE (tree, g_strdup ("*"));
+        }
+
         if (rschema)
             *rschema = schema;
     }
