@@ -184,12 +184,3 @@ would specify that all openconfig system model data should be stored in the apte
 Comment lines start with the # character.
 
 The *.map should be saved in the same directory as the input XML files .
-
-## XLAT files
-The concept behind the *.xlat files is to allow one model to be translated to another model. This is useful if multiple YANG
-models exist for the same type of data. In this case a back-end super YANG model is created which is a combination of
-the contributing models, and requests to the individual models are translated into a request of the super model and responses are
-translated back into the individual requesting models. In the Apteryx data store information only exists for the super model. The
-translation is controlled by a translating configuration file named {name}.xlat. The *.xlat files are LUA files that contain LUA code
-to translated data between one model an another. The translation information is returned when an *.xlat file is loaded. An example file
-can be found in models/xlat_test.xlat
