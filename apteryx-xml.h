@@ -47,11 +47,10 @@ typedef struct _sch_loaded_model
     char *deviations;
 } sch_loaded_model;
 
-typedef void * sch_xml_to_gnode_parms;
-
 /* Schema */
 typedef struct _sch_instance sch_instance;
 typedef void sch_node;
+typedef void sch_ns;
 sch_instance *sch_load (const char *path);
 sch_instance *sch_load_with_model_list_filename (const char *path,
                                                  const char *model_list_filename);
@@ -70,6 +69,13 @@ sch_node *sch_node_child_first (sch_node * parent);
 sch_node *sch_node_next_sibling (sch_node * node);
 sch_node *sch_preorder_next (sch_node *current, sch_node *root);
 sch_node *sch_get_root_schema (sch_instance * instance);
+
+sch_ns *sch_node_ns (sch_node * node);
+const char *sch_ns_prefix (sch_instance *instance, sch_ns *ns);
+const char *sch_ns_href (sch_instance *instance, sch_ns *ns);
+bool sch_ns_native (sch_instance *instance, sch_ns *ns);
+sch_ns *sch_lookup_ns (sch_instance * instance, sch_node *schema, const char *name, int flags, bool href);
+sch_node *sch_ns_node_child (sch_ns *ns, sch_node * parent, const char *child);
 
 char *sch_name (sch_node * node);
 char *sch_model (sch_node * node, bool ignore_ancestors);
@@ -92,7 +98,7 @@ char *sch_translate_to (sch_node * node, char *value);
 char *sch_translate_from (sch_node * node, char *value);
 bool sch_validate_pattern (sch_node * node, const char *value);
 gboolean sch_match_name (const char *s1, const char *s2);
-bool sch_ns_match (sch_node *node, void *ns);
+bool sch_ns_match (sch_node *node, sch_ns *ns);
 
 /* Data translation/manipulation */
 typedef enum
@@ -117,75 +123,8 @@ GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char
 bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags);
 bool sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags, int rdepth);
 GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char * path, int flags); //DEPRECATED
+void sch_gnode_sort_children (sch_node * schema, GNode * parent);
 
-/*
- * Netconf error handling
- **/
-
-/* Enumeration of <rpc-error> error-type information */
-typedef enum _NC_RPC_ERROR_TYPE {
-    NC_ERR_TYPE_UNKNOWN = 0,   /* unknown layer */
-    NC_ERR_TYPE_TRANSPORT,     /* secure transport layer */
-    NC_ERR_TYPE_RPC,           /* rpc layer */
-    NC_ERR_TYPE_PROTOCOL,      /* protocol layer */
-    NC_ERR_TYPE_APP            /* application layer */
-} NC_ERR_TYPE;
-
-/* Enumeration of <rpc-error> error-tag information */
-typedef enum _NC_RPC_ERROR_TAG {
-    NC_ERR_TAG_UNKNOWN = 0,         /* unknown error */
-    NC_ERR_TAG_IN_USE,              /* in-use error */
-    NC_ERR_TAG_INVALID_VAL,         /* invalid-value error */
-    NC_ERR_TAG_TOO_BIG,             /* too-big error */
-    NC_ERR_TAG_MISSING_ATTR,        /* missing-attribute error */
-    NC_ERR_TAG_BAD_ATTR,            /* bad-attribute error */
-    NC_ERR_TAG_UNKNOWN_ATTR,        /* unknown-attribute error */
-    NC_ERR_TAG_MISSING_ELEM,        /* missing-element error */
-    NC_ERR_TAG_BAD_ELEM,            /* bad-element error */
-    NC_ERR_TAG_UNKNOWN_ELEM,        /* unknown-element error */
-    NC_ERR_TAG_UNKNOWN_NS,          /* unknown-namespace error */
-    NC_ERR_TAG_ACCESS_DENIED,       /* access-denied error */
-    NC_ERR_TAG_LOCK_DENIED,         /* lock-denied error */
-    NC_ERR_TAG_RESOURCE_DENIED,     /* resource-denied error */
-    NC_ERR_TAG_DATA_EXISTS,         /* data-exists error */
-    NC_ERR_TAG_DATA_MISSING,        /* data-missing error */
-    NC_ERR_TAG_OPR_NOT_SUPPORTED,   /* operation-not-supported error */
-    NC_ERR_TAG_OPR_FAILED,          /* operation-failed error */
-    NC_ERR_TAG_MALFORMED_MSG        /* malformed-message error */
-} NC_ERR_TAG;
-
-typedef struct _nc_error_parms_s
-{
-    NC_ERR_TAG tag;
-    NC_ERR_TYPE type;
-    GHashTable *info;
-    GString* msg;
-} nc_error_parms;
-
-#define NC_ERROR_PARMS_INIT                                     \
-(nc_error_parms)                                                \
-{                                                               \
-    .tag  = NC_ERR_TAG_UNKNOWN,                                 \
-    .type = NC_ERR_TYPE_UNKNOWN,                                \
-    .info = g_hash_table_new_full (g_str_hash, g_str_equal,     \
-                                   NULL, g_free),               \
-    .msg  = g_string_new (NULL)                                 \
-};
-
-#ifdef APTERYX_XML_LIBXML2
-#include <libxml/tree.h>
-xmlNode *sch_gnode_to_xml (sch_instance * instance, sch_node * schema, GNode * node, int flags);
-sch_xml_to_gnode_parms sch_xml_to_gnode (sch_instance * instance, sch_node * schema,
-                                         xmlNode * xml, int flags, char * def_op,
-                                         bool is_edit, sch_node **rschema);
-GNode *sch_parm_tree (sch_xml_to_gnode_parms parms);
-nc_error_parms sch_parm_error (sch_xml_to_gnode_parms parms);
-GList *sch_parm_deletes (sch_xml_to_gnode_parms parms);
-GList *sch_parm_removes (sch_xml_to_gnode_parms parms);
-GList *sch_parm_creates (sch_xml_to_gnode_parms parms);
-GList *sch_parm_replaces (sch_xml_to_gnode_parms parms);
-void sch_parm_free (sch_xml_to_gnode_parms parms);
-#endif
 #ifdef APTERYX_XML_JSON
 #include <jansson.h>
 json_t *sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags);
