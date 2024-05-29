@@ -2376,6 +2376,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
     char *colon;
     char *name = NULL;
     sch_node *last_good_schema = NULL;
+    bool is_proxy = false;
 
     if (path && path[0] == '/')
     {
@@ -2435,8 +2436,41 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         }
 
         /* Find schema node */
-        if (!schema || sch_is_proxy (schema))
+        if (schema && sch_is_proxy (schema))
+        {
+            /* The schema containing the proxy node can have children */
+            sch_node *child = sch_ns_node_child (ns, schema, name);
+            if (!child)
+            {
+                is_proxy = sch_is_proxy (schema);
+            }
+        }
+
+        if (!schema || is_proxy)
+        {
             schema = xmlDocGetRootElement (instance->doc);
+            /* Detect change in namespace with the new schema */
+            colon = strchr (name, ':');
+            if (colon)
+            {
+                colon[0] = '\0';
+                xmlNs *nns = _sch_lookup_ns (instance, schema, name, flags, false);
+                if (!nns)
+                {
+                    /* No namespace found assume the node is supposed to have a colon in it */
+                    colon[0] = ':';
+                }
+                else
+                {
+                    /* We found a namespace. Remove the prefix */
+                    char *_name = name;
+                    name = g_strdup (colon + 1);
+                    free (_name);
+                    ns = nns;
+                }
+            }
+        }
+
         last_good_schema = schema;
         schema = _sch_node_child (ns, schema, name);
         if ((flags & SCH_F_XPATH) && schema == NULL && g_strcmp0 (name, "*") == 0)
@@ -2493,16 +2527,23 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         }
 
         /* Create node */
-        if (depth == 0)
+        if (depth == 0 || is_proxy)
         {
             if (ns && ns->prefix && !_sch_ns_native (instance, ns))
             {
-                rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s:%s", ns->prefix, name));
+                if (is_proxy)
+                    rnode = APTERYX_NODE (NULL, g_strdup_printf ("%s:%s", ns->prefix, name));
+                else
+                    rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s:%s", ns->prefix, name));
             }
             else
             {
-                rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s", name));
+                if (is_proxy)
+                    rnode = APTERYX_NODE (NULL, g_strdup (name));
+                else
+                    rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s", name));
             }
+            DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
         }
         else
         {
@@ -2512,24 +2553,27 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
 
         /* XPATH predicates */
-        if (pred && sch_is_list (schema)) {
+        if (pred && sch_is_list (schema))
+        {
             char key[128 + 1];
             char value[128 + 1];
 
+            schema = sch_node_child_first (schema);
             if (sscanf (pred, "[%128[^=]='%128[^']']", key, value) == 2) {
                 // TODO make sure this key is the list key
                 child = APTERYX_NODE (NULL, g_strdup (value));
                 g_node_prepend (rnode, child);
                 depth++;
                 DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
-                if (next) {
-                    APTERYX_NODE (child, g_strdup (key));
+                if (next)
+                {
+                    if ((flags & SCH_F_XPATH) == 0 || !sch_is_proxy (schema) )
+                        APTERYX_NODE (child, g_strdup (key));
                     depth++;
                     DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
                 }
             }
             g_free (pred);
-            schema = sch_node_child_first (schema);
         }
         else if (equals && sch_is_list (schema))
         {
@@ -2838,11 +2882,61 @@ sch_traverse_get_schema (sch_instance * instance, GNode *node, int flags)
 
 
 static bool
-_sch_traverse_nodes (sch_node * schema, GNode * parent, int flags, int depth, int rdepth)
+_sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent, int flags, int depth, int rdepth)
 {
     char *name = sch_name (schema);
     GNode *child = apteryx_find_child (parent, name);
     bool rc = true;
+
+
+    if (sch_is_proxy (schema) && g_strcmp0 (name, "*") == 0)
+    {
+        xmlNs *nns = NULL;
+        char *colon;
+
+        /* move to the list index specifier */
+        child = parent->children;
+        if (!child)
+        {
+            rc = false;
+            goto exit;
+        }
+        /* skip over the list index specifier */
+        child = child->children;
+        if (!child)
+        {
+            rc = false;
+            goto exit;
+        }
+        g_free (name);
+        name = g_strdup (APTERYX_NAME (child));
+        schema = xmlDocGetRootElement (instance->doc);
+        colon = strchr (name, ':');
+        if (schema && colon)
+        {
+            colon[0] = '\0';
+            nns = sch_lookup_ns (instance, schema, name, flags, false);
+            if (!nns)
+            {
+                /* No namespace found assume the node is supposed to have a colon in it */
+                colon[0] = ':';
+            }
+            else
+            {
+                /* We found a namespace. Remove the prefix */
+                char *_name = name;
+                name = g_strdup (colon + 1);
+                free (_name);
+            }
+        }
+        schema = _sch_node_child (nns, schema, name);
+        if (schema)
+        {
+            g_free (name);
+            name = sch_name (schema);
+        }
+        depth++;
+    }
 
     if (sch_is_leaf (schema))
     {
@@ -2939,11 +3033,11 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags, int depth, in
             {
                 if (flags & SCH_F_FILTER_RDEPTH)
                 {
-                    rc = _sch_traverse_nodes (s, child, flags, depth+1, rdepth);
+                    rc = _sch_traverse_nodes (instance, s, child, flags, depth+1, rdepth);
                 }
                 else
                 {
-                    rc = _sch_traverse_nodes (s, child, flags, 0, 0);
+                    rc = _sch_traverse_nodes (instance, s, child, flags, 0, 0);
                 }
                 if (!rc)
                     goto exit;
@@ -2980,11 +3074,11 @@ _sch_traverse_nodes (sch_node * schema, GNode * parent, int flags, int depth, in
             {
                 if (flags & SCH_F_FILTER_RDEPTH)
                 {
-                    rc = _sch_traverse_nodes (s, child, flags, depth+1, rdepth);
+                    rc = _sch_traverse_nodes (instance, s, child, flags, depth+1, rdepth);
                 }
                 else
                 {
-                    rc = _sch_traverse_nodes (s, child, flags, 0, 0);
+                    rc = _sch_traverse_nodes (instance, s, child, flags, 0, 0);
                 }
                 if (!rc)
                     goto exit;
@@ -3021,7 +3115,7 @@ sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int
         {
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                rc = _sch_traverse_nodes (s, node, flags, 1, rdepth);
+                rc = _sch_traverse_nodes (instance, s, node, flags, 1, rdepth);
                 if (!rc)
                     break;
             }
@@ -3030,15 +3124,52 @@ sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int
     else
     {
         schema = schema ?: xmlDocGetRootElement (instance->doc);
+        /* if this has been called from restconf, then the schema may be at a proxy node */
+        if (sch_is_proxy (schema))
+        {
+            xmlNs *nns = NULL;
+            char *colon;
+            char *name;
+
+            /* move to the list index specifier */
+            node = node->children;
+            if (!node)
+                return rc;
+            name = g_strdup (APTERYX_NAME (node));
+            schema = xmlDocGetRootElement (instance->doc);
+            colon = strchr (name, ':');
+            if (schema && colon)
+            {
+                colon[0] = '\0';
+                nns = sch_lookup_ns (instance, schema, name, flags, false);
+                if (!nns)
+                {
+                    /* No namespace found assume the node is supposed to have a colon in it */
+                    colon[0] = ':';
+                }
+                else
+                {
+                    /* We found a namespace. Remove the prefix */
+                    char *_name = name;
+                    name = g_strdup (colon + 1);
+                    free (_name);
+                }
+            }
+            schema = _sch_node_child (nns, schema, name);
+            g_free (name);
+            if (!schema)
+                return rc;
+        }
+
         if (sch_is_leaf (schema))
         {
-            rc = _sch_traverse_nodes (schema, node->parent, flags, 0, 0);
+            rc = _sch_traverse_nodes (instance, schema, node->parent, flags, 0, 0);
         }
         else
         {
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                rc = _sch_traverse_nodes (s, node, flags, 0, 0);
+                rc = _sch_traverse_nodes (instance, s, node, flags, 0, 0);
                 if (!rc)
                     break;
             }
@@ -3089,9 +3220,43 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     }
 
     /* Find schema node */
-    if (!schema)
-        schema = xmlDocGetRootElement (instance->doc);
-    schema = _sch_node_child (ns, schema, name);
+    if (sch_is_proxy (schema))
+    {
+        /* Two possible cases, the node is a child of the proxy node or we need to
+         * move to access the remote database via the proxy */
+        schema = _sch_node_child (ns, schema, name);
+        if (!schema)
+        {
+            schema = xmlDocGetRootElement (instance->doc);
+            colon = strchr (name, ':');
+            if (schema && colon)
+            {
+                colon[0] = '\0';
+                xmlNs *nns = sch_lookup_ns (instance, schema, name, flags, false);
+                if (!nns)
+                {
+                    /* No namespace found assume the node is supposed to have a colon in it */
+                    colon[0] = ':';
+                }
+                else
+                {
+                    /* We found a namespace. Remove the prefix */
+                    char *_name = name;
+                    name = g_strdup (colon + 1);
+                    free (_name);
+                    ns = nns;
+                }
+            }
+            schema = _sch_node_child (ns, schema, name);
+        }
+    }
+    else
+    {
+        if (!schema)
+            schema = xmlDocGetRootElement (instance->doc);
+        schema = _sch_node_child (ns, schema, name);
+    }
+
     if (schema == NULL)
     {
         ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for gnode %s%s%s\n",
