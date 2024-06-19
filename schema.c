@@ -2048,119 +2048,83 @@ q2n_split_params (const char *params, char separator)
             depth -= 1;
         else if (depth == 0 && c == separator)
         {
-            list = g_list_append (list, g_string_free (result, false));
-            result = g_string_new (NULL);
+            /* Save string if there's something in it, otherwise just keep using it. */
+            if (result->len > 0)
+            {
+                list = g_list_append (list, g_string_free (result, false));
+                result = g_string_new (NULL);
+            }
+            else
+            {
+                g_list_free_full (list, g_free);
+                g_string_free (result, true);
+                return NULL;
+            }
             continue;
         }
         g_string_append_c (result, c);
     }
     if (result)
-        list = g_list_append (list, g_string_free (result, false));
+    {
+        if (result->len > 0)
+        {
+            list = g_list_append (list, g_string_free (result, false));
+        }
+        else
+        {
+            g_list_free_full (list, g_free);
+            g_string_free (result, true);
+            return NULL;
+        }
+    }
     return list;
 }
 
-static GNode*
-q2n_append_path (sch_node * schema, GNode *root, const char *path, int flags, int depth, sch_node **rschema)
-{
-    char **nodes = g_strsplit (path, "/", -1);
-    char **node = nodes;
-    while (*node)
-    {
-        char *name = *node;
-
-        /* Find schema node */
-        schema = sch_node_child (schema, name);
-        if (schema == NULL)
-        {
-            ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s\n", name);
-            return NULL;
-        }
-        if (!sch_is_readable (schema))
-        {
-            ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
-            return NULL;
-        }
-
-        /* Create the node if it does not already exist */
-        DEBUG (flags, "%*s%s\n", depth * 2, " ", name);
-        GNode *existing = apteryx_find_child (root, name);
-        if (existing)
-            root = existing;
-        else
-            root = g_node_append_data (root, g_strdup (name));
-        node++;
-        depth++;
-    }
-    g_strfreev (nodes);
-    if (rschema)
-        *rschema = schema;
-    return root;
-}
-
 static bool
-_field_query_to_node (sch_node * schema, const char *fields, GNode *parent, int flags, int depth, const char *tail)
+_check_name (const gchar *name)
 {
-    GList *params = q2n_split_params (fields, ';');
-    bool rc = true;
+    const gchar *nc;
+    size_t len = strlen (name);
 
-    for (GList *iter = g_list_first (params); rc && iter; iter = g_list_next (iter))
+    /* Empty string not valid. */
+    if (len == 0)
     {
-        sch_node *nschema = schema;
-        GNode *rroot = parent;
-        fields = iter->data;
-        char *left = g_strstr_len (fields, -1, "(");
-        char *right = g_strrstr_len (fields, -1, ")");
-        if (left == NULL && right == NULL)
+        return false;
+    }
+
+    /* Single '*' is a wild card */
+    if (len == 1 && name[0] == '*')
+    {
+        return true;
+    }
+    if (!g_ascii_isalpha (name[0]) && name[0] != '_')
+    {
+        return false;
+    }
+    for (nc = name + 1; *nc != '\0'; nc++)
+    {
+        if (!g_ascii_isalnum (*nc) && (*nc != '_') && (*nc != '-') && (*nc != '.'))
         {
-            rroot = q2n_append_path (schema, rroot, fields, flags, depth, &nschema);
-            if (!rroot)
-                rc = false;
-            if (rc && tail)
-            {
-                rroot = q2n_append_path (nschema, rroot, tail, flags, depth, NULL);
-                if (!rroot)
-                    rc = false;
-            }
-            continue;
-        }
-        if (left == NULL || right == NULL)
             return false;
-        char *left_side = (left - fields) > 0 ? g_strndup (fields, left - fields) : NULL;
-        char *middle = g_strndup (left + 1, right - left - 1);
-        char *right_side = strlen (right + 1) > 0 ? g_strdup (right + 1) : NULL;
-        if (left_side)
-        {
-            rroot = q2n_append_path (nschema, rroot, left_side, flags, depth, &nschema);
-            if (!rroot)
-                rc = false;
         }
-        if (rc && middle)
-        {
-            if (!_field_query_to_node (nschema, middle, rroot, flags, depth, right_side ?: tail))
-            {
-                rc = false;
-                goto exit;
-            }
-        }
-        else if (rc && tail)
-        {
-            rroot = q2n_append_path (nschema, rroot, tail, flags, depth, NULL);
-            if (!rroot)
-                return false;
-        }
-        free (left_side);
-        free (middle);
-        free (right_side);
     }
-exit:
-    g_list_free_full (params, g_free);
-    return rc;
+    return true;
 }
 
 static bool
-parse_query_fields (sch_node * schema, char *fields, GNode *parent, int flags, int depth)
+_check_tail (const gchar *tail)
 {
-    return _field_query_to_node (schema, fields, parent, flags, depth, NULL);
+    size_t len = strlen (tail);
+
+    if (len < 2)
+    {
+        return false;
+    }
+    if (tail[0] != '/')
+    {
+        return false;
+    }
+    return true;
 }
 
 static bool
@@ -2201,6 +2165,205 @@ add_all_query_nodes (sch_node *schema, GNode *parent, bool config, bool state, i
 
     free (name);
     return true;
+}
+
+static GNode*
+q2n_append_path (sch_node * schema, GNode *root, const char *path, int flags, int depth, sch_node **rschema, bool expand_non_leaf, bool config, bool nonconfig)
+{
+    char **nodes = g_strsplit (path, "/", -1);
+    char **node = nodes;
+    sch_node *index;
+    sch_node *child;
+    GNode *existing;
+
+    while (*node)
+    {
+        char *name = *node;
+
+        /* Check characters in name. Must start with A-Za-z_, other characters are A-Za-z_-0-9.
+         * There is an exception for a single '*'
+         */
+        if (!_check_name (name))
+        {
+            g_strfreev (nodes);
+            return NULL;
+        }
+
+        /* Find schema node - since it might be an index node, call it such. */
+        index = sch_node_child (schema, name);
+        if (index == NULL)
+        {
+            ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s\n", name);
+            g_strfreev (nodes);
+            return NULL;
+        }
+        if (!sch_is_readable (index))
+        {
+            ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
+            g_strfreev (nodes);
+            return NULL;
+        }
+
+        /* Because we allow for implicit wild-card index, need to check if this node is actually
+         * for a child of a wildcard node.
+         */
+        if (sch_is_list (schema) && (child = sch_node_child (index, name)))
+        {
+            if (!sch_is_readable (child))
+            {
+                ERROR (flags, SCH_E_NOTREADABLE, "Ignoring non-readable node %s\n", name);
+                g_strfreev (nodes);
+                return NULL;
+            }
+            existing = apteryx_find_child (root, "*");
+            if (!existing)
+            {
+                existing = APTERYX_NODE (root, g_strdup ("*"));
+            }
+            root = existing;
+            schema = child;
+        }
+        else
+        {
+            schema = index;
+        }
+
+        /* Create the node if it does not already exist */
+        DEBUG (flags, "%*s%s\n", depth * 2, " ", name);
+        existing = apteryx_find_child (root, name);
+        if (existing)
+            root = existing;
+        else
+            root = g_node_append_data (root, g_strdup (name));
+        node++;
+        depth++;
+    }
+
+    /* If schema is not a leaf, expand query with all subsequent children, if allowed. */
+    if (!sch_is_leaf (schema) && expand_non_leaf)
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            /* Recurse tree adding all elements */
+            add_all_query_nodes (s, root, config, nonconfig, flags, depth + 1, INT_MAX);
+        }
+    }
+
+    g_strfreev (nodes);
+    if (rschema)
+        *rschema = schema;
+    return root;
+}
+
+static bool
+_field_query_to_node (sch_node * schema, const char *fields, GNode *parent, int flags, int depth, const char *tail, bool config, bool nonconfig)
+{
+    GList *params = q2n_split_params (fields, ';');
+    bool rc = true;
+    gchar *left_side = NULL;
+    gchar *middle = NULL;
+    gchar *right_side = NULL;
+
+    if (params == NULL)
+    {
+        return false;
+    }
+    for (GList *iter = g_list_first (params); rc && iter; iter = g_list_next (iter))
+    {
+        sch_node *nschema = schema;
+        GNode *rroot = parent;
+        fields = iter->data;
+        if (strlen (fields) == 0) {
+            rc = false;
+            goto exit;
+        }
+
+        char *left = g_strstr_len (fields, -1, "(");
+        char *right = g_strrstr_len (fields, -1, ")");
+        if (right < left)
+        {
+            rc = false;
+            goto exit;
+        }
+        if (left == NULL && right == NULL)
+        {
+            rroot = q2n_append_path (schema, rroot, fields, flags, depth, &nschema, tail == NULL, config, nonconfig);
+            if (!rroot)
+            {
+                rc = false;
+                goto exit;
+            }
+            if (rc && tail)
+            {
+                if (!_check_tail (tail))
+                {
+                    rc = false;
+                    goto exit;
+                }
+                rroot = q2n_append_path (nschema, rroot, &tail[1], flags, depth, NULL, true, config, nonconfig);
+                if (!rroot)
+                {
+                    rc = false;
+                    goto exit;
+                }
+            }
+            continue;
+        }
+        if (left == NULL || right == NULL)
+        {
+            rc = false;
+            goto exit;
+        }
+        left_side = (left - fields) > 0 ? g_strndup (fields, left - fields) : NULL;
+        middle = g_strndup (left + 1, right - left - 1);
+        right_side = strlen (right + 1) > 0 ? g_strdup (right + 1) : NULL;
+        if (left_side)
+        {
+            rroot = q2n_append_path (nschema, rroot, left_side, flags, depth, &nschema, middle == NULL, config, nonconfig);
+            if (!rroot)
+            {
+                rc = false;
+                goto exit1;
+            }
+        }
+        if (rc && middle)
+        {
+            if (!_field_query_to_node (nschema, middle, rroot, flags, depth, right_side ?: tail, config, nonconfig))
+            {
+                rc = false;
+                goto exit1;
+            }
+        }
+        else if (rc && tail)
+        {
+            rroot = q2n_append_path (nschema, rroot, tail, flags, depth, NULL, true, config, nonconfig);
+            if (!rroot)
+            {
+                rc = false;
+                goto exit1;
+            }
+        }
+        free (left_side);
+        free (middle);
+        free (right_side);
+        left_side = NULL;
+        middle = NULL;
+        right_side = NULL;
+
+    }
+exit1:
+    g_free (left_side);
+    g_free (middle);
+    g_free (right_side);
+exit:
+    g_list_free_full (params, g_free);
+    return rc;
+}
+
+static bool
+parse_query_fields (sch_node * schema, char *fields, GNode *parent, int flags, int depth, bool config, bool nonconfig)
+{
+    return _field_query_to_node (schema, fields, parent, flags, depth, NULL, config, nonconfig);
 }
 
 static bool
@@ -2314,14 +2477,7 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
     /* Support fields || (depth AND/OR content) */
     if (qfields)
     {
-        /* If a list we need to wildcard the entry name before adding field query */
-        if (sch_is_list (schema))
-        {
-            node = APTERYX_NODE (node, g_strdup ("*"));
-            DEBUG (flags, "%*s%s\n", (depth + 1) * 2, " ", "*");
-            depth++;
-        }
-        if (!parse_query_fields (schema, qfields, node, flags, depth + 1))
+        if (!parse_query_fields (schema, qfields, node, flags, depth + 1, config, nonconfig))
         {
             rc = false;
             goto exit;
