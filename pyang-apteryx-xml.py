@@ -158,6 +158,10 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
             "case": self.case,
             "list": self.list,
             "leaf-list": self.leaf_list,
+            "action": self.rpc,
+            "rpc": self.rpc,
+            "input": self.rpc,
+            "output": self.rpc,
         }
         self.enum_name = ctx.opts.enum_name
 
@@ -249,6 +253,24 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 self.node_handler.get(ch.keyword, self.ignore)(
                     ch, elem, module, path)
 
+    def rpc(self, node, elem, module, path):
+        if (node.keyword == 'input' or node.keyword == 'output') and len(node.substmts) == 0:
+            return
+        parent = elem
+        if node.keyword == 'rpc':
+            root = elem
+            while root.find('..'):
+                root = root.find('..')
+            parent = root.find(".//NODE[@name='operations']")
+            if parent is None:
+                parent = etree.SubElement(root, "NODE")
+                parent.attrib = OrderedDict()
+                parent.attrib["name"] = "operations"
+        nel, newm, path = self.sample_element(node, parent, module, path)
+        if path is None:
+            return
+        self.process_children(node, nel, newm, path)
+
     def container(self, node, elem, module, path):
         nel, newm, path = self.sample_element(node, elem, module, path)
         if path is None:
@@ -286,6 +308,13 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                     return True
         return False
 
+    def node_descendant_of(self, node, keyword):
+        while node.parent is not None:
+            if node.parent.keyword == keyword:
+                return True
+            node = node.parent
+        return False
+
     def sample_element(self, node, parent, module, path):
         if path is None:
             return parent, module, None
@@ -303,9 +332,15 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         res = etree.SubElement(parent, "{" + ns.arg + "}NODE")
         res.attrib = OrderedDict()
         res.attrib["name"] = node.arg
+        if node.keyword == 'rpc' or node.keyword == 'action':
+            res.attrib["mode"] = "rwx"
         if node.keyword == 'leaf':
             if node.i_config:
                 res.attrib["mode"] = "rw"
+            elif self.node_descendant_of(node, "input"):
+                res.attrib["mode"] = "w"
+            elif self.node_descendant_of(node, "output"):
+                res.attrib["mode"] = "r"
             else:
                 res.attrib["mode"] = "r"
             if node.i_default is not None:

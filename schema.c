@@ -1743,6 +1743,20 @@ sch_is_writable (sch_node * node)
 }
 
 bool
+sch_is_executable (sch_node * node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    bool access = false;
+    char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
+    if (mode && strchr (mode, 'x') != NULL)
+    {
+        access = true;
+    }
+    free (mode);
+    return access;
+}
+
+bool
 sch_is_hidden (sch_node * node)
 {
     xmlNode *xml = (xmlNode *) node;
@@ -2521,6 +2535,7 @@ static GNode *
 _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, const char *path, int flags, int depth)
 {
     sch_node *schema = rschema && *rschema ? *rschema : xmlDocGetRootElement (instance->doc);
+    xmlNs *nns = NULL;
     const char *next = NULL;
     GNode *node = NULL;
     GNode *rnode = NULL;
@@ -2551,7 +2566,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         if (colon)
         {
             colon[0] = '\0';
-            xmlNs *nns = _sch_lookup_ns (instance, schema, name, flags, false);
+            nns = _sch_lookup_ns (instance, schema, name, flags, false);
             if (!nns)
             {
                 /* No namespace found assume the node is supposed to have a colon in it */
@@ -2610,7 +2625,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
             if (colon)
             {
                 colon[0] = '\0';
-                xmlNs *nns = _sch_lookup_ns (instance, schema, name, flags, false);
+                nns = _sch_lookup_ns (instance, schema, name, flags, false);
                 if (!nns)
                 {
                     /* No namespace found assume the node is supposed to have a colon in it */
@@ -2675,6 +2690,13 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
             }
         }
 
+        /* Check RPC's are not bypassed */
+        if (schema && next && next[0] != '\0' && sch_is_executable (schema))
+        {
+            DEBUG (flags, "Tried to access parameter node of RPC\n");
+            schema = NULL;
+        }
+
         if (schema == NULL)
         {
             ERROR (flags, SCH_E_NOSCHEMANODE, "No schema match for %s%s%s\n", ns ? (char *) ns->prefix : "",
@@ -2682,22 +2704,16 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
             goto exit;
         }
 
-        /* Create node */
-        if (depth == 0 || is_proxy)
+        /* Create node - include namespace node mapping if required */
+        if (depth == 0 || nns || is_proxy)
         {
             if (ns && ns->prefix && !_sch_ns_native (instance, ns))
             {
-                if (is_proxy)
-                    rnode = APTERYX_NODE (NULL, g_strdup_printf ("%s:%s", ns->prefix, name));
-                else
-                    rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s:%s", ns->prefix, name));
+                rnode = APTERYX_NODE (NULL, g_strdup_printf ("%s%s:%s", depth == 0 ? "/" : "", ns->prefix, name));
             }
             else
             {
-                if (is_proxy)
-                    rnode = APTERYX_NODE (NULL, g_strdup (name));
-                else
-                    rnode = APTERYX_NODE (NULL, g_strdup_printf ("/%s", name));
+                rnode = APTERYX_NODE (NULL, g_strdup_printf ("%s%s", depth == 0 ? "/" : "", name));
             }
             DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
         }

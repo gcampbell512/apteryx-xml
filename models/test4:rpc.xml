@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<MODULE xmlns="http://test.com/ns/yang/testing-4"
+        xmlns:test="http://test.com/ns/yang/testing"
+        xmlns:t4="http://test.com/ns/yang/testing-4"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd"
+        model="testing-4" organization="Test 4 Ltd" version="2024-02-01">
+  <NODE name="test" help="This is a test node in the testing-4 namespace">
+    <NODE name="state" help="State">
+      <NODE name="age" mode="r" help="a string"/>
+      <NODE name="reset" mode="wx" help="Reset state">
+        <NODE name="input" help="Input parameters">
+          <NODE name="delay" mode="w" help="Number of seconds to wait before starting the reset" range="0..4294967295"/>
+        </NODE>
+      </NODE>
+      <NODE name="get-last-reset-time" mode="rwx" help="Retrieve the last interface reset time">
+        <NODE name="output" help="Output parameters">
+          <NODE name="last-reset" mode="r" help="Time of the last reset" range="0..4294967295"/>
+        </NODE>
+      </NODE>
+      <NODE name="users" help="This is a list of users">
+        <NODE name="*" help="The user entry with key name">
+          <NODE name="name" mode="rw" help="This is the name of the user"/>
+          <NODE name="age" mode="rw" help="Age of the user" range="0..4294967295"/>
+          <NODE name="set-age" mode="wx" help="Set the users age">
+            <NODE name="input" help="Input parameters">
+              <NODE name="age" mode="w" help="New age" range="0..4294967295"/>
+            </NODE>
+          </NODE>
+        </NODE>
+      </NODE>
+    </NODE>
+  </NODE>
+  <test:NODE name="operations" help="Container for all operation resources.">
+    <NODE name="reboot" mode="wx" help="Reboot operation.">
+      <NODE name="input" help="Input parameters">
+        <NODE name="delay" mode="w" help="Number of seconds to wait before initiating the reboot operation." range="0..4294967295"/>
+        <NODE name="message" mode="w" help="Log message to display when reboot is started."/>
+        <NODE name="language" mode="w" help="Language identifier string."/>
+      </NODE>
+    </NODE>
+    <NODE name="get-reboot-info" mode="rx" help="Retrieve parameters used in the last reboot operation.">
+      <NODE name="output" help="Output parameters">
+        <NODE name="reboot-time" mode="r" help="The 'delay' parameter used in the last reboot operation." range="0..4294967295"/>
+        <NODE name="message" mode="r" help="The 'message' parameter used in the last reboot operation."/>
+        <NODE name="language" mode="r" help="The 'language' parameter used in the last reboot operation."/>
+      </NODE>
+    </NODE>
+  </test:NODE>
+</MODULE>

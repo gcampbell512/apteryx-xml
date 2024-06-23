@@ -1,3 +1,4 @@
 #<namespace> <root node>
 http://test.com/ns/yang/testing-2 /t2:test
 http://test.com/ns/yang/testing-3 /t3:test
+http://test.com/ns/yang/testing-4 /t4:test
