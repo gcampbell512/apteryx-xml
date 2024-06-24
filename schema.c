@@ -3602,6 +3602,25 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     return data;
 }
 
+static gchar *
+_model_name (xmlNs *ns, char *model, char *name)
+{
+    gchar *ret;
+    gchar **n_split = g_strsplit (name, ":", 2);
+
+    /* If first part of name is actually the namespace prefix, we don't want to see it */
+    if (g_strv_length (n_split) == 2 && g_strcmp0 (n_split[0], (gchar *) ns->prefix) == 0)
+    {
+        ret = g_strdup_printf ("%s:%s", model, n_split[1]);
+    }
+    else
+    {
+        ret = g_strdup_printf ("%s:%s", model, name);
+    }
+    g_strfreev (n_split);
+    return ret;
+}
+
 json_t *
 sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
@@ -3632,7 +3651,7 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
             char * model = sch_model (schema, false);
             if (model)
             {
-                name = g_strdup_printf ("%s:%s", model, name);
+                name = _model_name (ns, model, name);
                 json = json_object ();
                 json_object_set_new (json, name, child);
                 free (name);
