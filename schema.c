@@ -2095,37 +2095,6 @@ q2n_split_params (const char *params, char separator)
 }
 
 static bool
-_check_name (const gchar *name)
-{
-    const gchar *nc;
-    size_t len = strlen (name);
-
-    /* Empty string not valid. */
-    if (len == 0)
-    {
-        return false;
-    }
-
-    /* Single '*' is a wild card */
-    if (len == 1 && name[0] == '*')
-    {
-        return true;
-    }
-    if (!g_ascii_isalpha (name[0]) && name[0] != '_')
-    {
-        return false;
-    }
-    for (nc = name + 1; *nc != '\0'; nc++)
-    {
-        if (!g_ascii_isalnum (*nc) && (*nc != '_') && (*nc != '-') && (*nc != '.'))
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool
 _check_tail (const gchar *tail)
 {
     size_t len = strlen (tail);
@@ -2181,6 +2150,77 @@ add_all_query_nodes (sch_node *schema, GNode *parent, bool config, bool state, i
     return true;
 }
 
+/**
+ * Split a node by ':' character into module and name. Only one ':' allowed, if line is split both
+ * parts must be >0 characters. Return pointers point to original string, ':' is replaced by '\0'.
+ */
+static void
+_split_module_name (char *node, char **name, char **module)
+{
+    char *c_pt;
+    int count_sep = 0;
+    bool on_sep = false;
+    char *first_sep = NULL;
+
+    *module = *name = node;
+    for (c_pt = node; *c_pt != '\0'; c_pt++)
+    {
+        if (*c_pt == ':')
+        {
+            count_sep++;
+            if (first_sep == NULL)
+            {
+                first_sep = c_pt;
+                *first_sep = '\0';
+                on_sep = true;
+            }
+            else
+            {
+                break;
+            }
+        }
+        else if (on_sep)
+        {
+            *name = c_pt;
+            on_sep = false;
+        }
+    }
+
+    /* Clean up. */
+    if (count_sep == 0)
+    {
+        *module = NULL;
+    }
+    else if (count_sep > 1 || on_sep || strlen (*module) == 0 || strlen (*name) == 0)
+    {
+        *module = NULL;
+        *name = node;
+        if (first_sep != NULL)
+        {
+            *first_sep = ':';
+        }
+    }
+}
+
+static bool
+_check_model (char *module, sch_node *schema)
+{
+    bool ret = true;
+    char *model;
+
+    if (module == NULL || strlen (module) == 0)
+    {
+        return ret;
+    }
+    model = sch_model (schema, false);
+    if (model != NULL)
+    {
+        ret = (g_strcmp0 (module, model) == 0);
+    }
+    g_free (model);
+    return ret;
+}
+
 static GNode*
 q2n_append_path (sch_node * schema, GNode *root, const char *path, int flags, int depth, sch_node **rschema, bool expand_non_leaf, bool config, bool nonconfig)
 {
@@ -2192,16 +2232,10 @@ q2n_append_path (sch_node * schema, GNode *root, const char *path, int flags, in
 
     while (*node)
     {
-        char *name = *node;
+        char *name;
+        char *module;
 
-        /* Check characters in name. Must start with A-Za-z_, other characters are A-Za-z_-0-9.
-         * There is an exception for a single '*'
-         */
-        if (!_check_name (name))
-        {
-            g_strfreev (nodes);
-            return NULL;
-        }
+        _split_module_name (*node, &name, &module);
 
         /* Find schema node - since it might be an index node, call it such. */
         index = sch_node_child (schema, name);
@@ -2240,6 +2274,14 @@ q2n_append_path (sch_node * schema, GNode *root, const char *path, int flags, in
         else
         {
             schema = index;
+        }
+
+        /* Should be pointing at a true schema node, check that module matches if specified. */
+        if (!_check_model (module, schema))
+        {
+            ERROR (flags, SCH_E_NOSCHEMANODE, "No model match for %s\n", module);
+            g_strfreev (nodes);
+            return NULL;
         }
 
         /* Create the node if it does not already exist */
