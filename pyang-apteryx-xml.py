@@ -338,7 +338,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 npatt = ntype.search_one("pattern")
                 if npatt is not None:
                     res.attrib["pattern"] = npatt.arg
-            if ntype.arg == "boolean":
+            elif ntype.arg == "boolean":
                 value = etree.SubElement(res, "{" + ns.arg + "}VALUE")
                 value.attrib = OrderedDict()
                 value.attrib["name"] = "true"
@@ -347,7 +347,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 value.attrib = OrderedDict()
                 value.attrib["name"] = "false"
                 value.attrib["value"] = "false"
-            if ntype.arg == "enumeration":
+            elif ntype.arg == "enumeration":
                 count = 0
                 for enum in ntype.substmts:
                     value = etree.SubElement(res, "{" + ns.arg + "}VALUE")
@@ -372,7 +372,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                     if descr is not None:
                         descr.arg = descr.arg.replace('\r', ' ').replace('\n', ' ')
                         value.attrib["help"] = descr.arg
-            if ntype.arg in ["int8", "int16", "int32", "uint8", "uint16", "uint32"]:
+            elif ntype.arg in ["int8", "int16", "int32", "uint8", "uint16", "uint32"]:
                 range = ntype.search_one("range")
                 if range is not None:
                     res.attrib["range"] = range.arg
@@ -388,7 +388,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                     res.attrib["range"] = "0..65535"
                 elif ntype.arg == "uint32":
                     res.attrib["range"] = "0..4294967295"
-            if ntype.arg in ["int64", "uint64"]:
+            elif ntype.arg in ["int64", "uint64"]:
                 # These values are actually encoded as strings
                 range = ntype.search_one("range")
                 if range is not None:
@@ -400,4 +400,15 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 elif ntype.arg == "uint64":
                     # range="0..18446744073709551615"
                     res.attrib["pattern"] = "([0-9]{1,19}|1([0-7][0-9]{18}|8([0-3][0-9]{17}|4([0-3][0-9]{16}|4([0-5][0-9]{15}|6([0-6][0-9]{14}|7([0-3][0-9]{13}|4([0-3][0-9]{12}|40([0-6][0-9]{10}|7([0-2][0-9]{9}|3([0-6][0-9]{8}|70([0-8][0-9]{6}|9([0-4][0-9]{5}|5([0-4][0-9]{4}|5(0[0-9]{3}|1([0-5][0-9]{2}|6(0[0-9]|1[0-5])))))))))))))))))"
+            elif ntype.arg == 'union':
+                uniontypes = ntype.search('type')
+                upatt = []
+                for uniontype in uniontypes:
+                    if uniontype.i_typedef:
+                        ut = uniontype.i_typedef.search_one("type")
+                        npatt = ut.search_one("pattern")
+                        if npatt is not None:
+                            upatt.append(f"(^{npatt.arg}$)")
+                if len(upatt) > 0:
+                    res.attrib["pattern"] = "|".join(upatt)
         return res, module, path
