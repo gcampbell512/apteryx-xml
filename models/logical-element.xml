@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<MODULE xmlns="http://example.com/ns/logical-elements"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd"
+    model="logical-elements" namespace="http://logical.com/ns/logical-elements" prefix="le"
+    organization="Dummy Organization" version="2024-04-04">
+  <NODE name="logical-elements" help="Allows a device to support multiple logical element (device) instances.">
+    <NODE name="logical-element" help="List of logical elements.">
+      <NODE name="*" mode="p" help="The logical-element entry with key name">
+        <NODE name="name" mode="rw" help="Device-wide unique identifier for the logical element."/>
+        <NODE name="root" help="Container for mount point."/>
+      </NODE>
+    </NODE>
+  </NODE>
+</MODULE>
