@@ -2747,7 +2747,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         }
 
         /* Create node - include namespace node mapping if required */
-        if (depth == 0 || nns || is_proxy)
+        if (depth == 0 || is_proxy)
         {
             if (ns && ns->prefix && !_sch_ns_native (instance, ns))
             {
