@@ -119,6 +119,7 @@ typedef enum
     SCH_F_ADD_MISSING_NULL      = (1 << 12), /* Add missing nodes with NULL values */
     SCH_F_SET_NULL              = (1 << 13), /* Set all nodes to NULL */
     SCH_F_FILTER_RDEPTH         = (1 << 14), /* Set filter based on depth value */
+    SCH_F_IDREF_VALUES          = (1 << 15), /* Expand identityref based values to include type information */
 } sch_flags;
 GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char * path, int flags, sch_node ** rschema);
 bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags);

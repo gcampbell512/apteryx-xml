@@ -3593,7 +3593,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
             value = sch_translate_to (schema, value);
         }
 
-        if (value)
+        if (value && (flags & SCH_F_IDREF_VALUES))
         {
             /* Check to see if the schema has any identityref information */
             xmlChar *idref_module = xmlGetProp ((xmlNode *)schema, (const xmlChar *)"idref_module");
