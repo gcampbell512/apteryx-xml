@@ -67,7 +67,7 @@
       <NODE name="animal" help="This is a list of animals">
         <NODE name="*" help="The animal entry with key name">
           <NODE name="name" mode="rw" help="This is the name of the animal"/>
-          <NODE name="type" mode="rw" default="big" help="This is the type of the animal">
+          <NODE name="type" idref_href="http://test.com/ns/yang/animal-types" idref_prefix="a-types" idref_module="animal-testing-types" mode="rw" default="big" help="This is the type of the animal">
             <VALUE name="big" value="1"/>
             <VALUE name="little" value="2"/>
           </NODE>

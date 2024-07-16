@@ -3587,9 +3587,27 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     else if (APTERYX_HAS_VALUE (node))
     {
         char *value = g_strdup (APTERYX_VALUE (node) ? APTERYX_VALUE (node) : "");
+
         if (flags & SCH_F_JSON_TYPES)
         {
             value = sch_translate_to (schema, value);
+        }
+
+        if (value)
+        {
+            /* Check to see if the schema has any identityref information */
+            xmlChar *idref_module = xmlGetProp ((xmlNode *)schema, (const xmlChar *)"idref_module");
+            if (idref_module)
+            {
+                char *temp = value;
+                value = g_strdup_printf ("%s:%s", (char *) idref_module, value);
+                g_free (temp);
+                xmlFree (idref_module);
+            }
+        }
+
+        if (flags & SCH_F_JSON_TYPES)
+        {
             data = encode_json_type (schema, value);
         }
         else

@@ -315,6 +315,40 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
             node = node.parent
         return False
 
+    def value_attrib_identityref(self, res, ntype):
+        if hasattr(ntype, "i_type_spec") and hasattr(ntype.i_type_spec, "idbases"):
+            for ch in ntype.i_type_spec.idbases:
+                sp_parts = ch.arg.split(':', 2);
+                if ch.i_module.i_prefixes is not None:
+                    for pref, mname in ch.i_module.i_prefixes.items():
+                        if pref == sp_parts[0]:
+                            module_name = mname[:][0]
+                            subm = ch.i_module.i_ctx.get_module(module_name)
+                            if subm is not None:
+                                    ns = subm.search_one('namespace')
+                                    if ns is not None and subm.i_prefix is not None:
+                                        res.attrib["idref_href"] = ns.arg
+                                        res.attrib["idref_prefix"] = subm.i_prefix
+                                        res.attrib["idref_module"] = module_name
+                                        return
+
+    def value_identityref(self, node, res):
+        ntype = node.search_one("type")
+        if ntype and ntype.i_typedef is not None:
+            ntype = ntype.i_typedef.search_one("type")
+        if ntype is not None:
+            if ntype.arg == "identityref":
+                self.value_attrib_identityref(res, ntype)
+            if ntype.arg == "union" and hasattr(ntype, "i_type_spec"):
+                if (hasattr(ntype.i_type_spec, "types")):
+                    base_idref = True
+                    for ch in ntype.i_type_spec.types:
+                        if ch.arg != "identityref":
+                            base_idref = False
+                            break
+                    if base_idref and hasattr(ch, "i_type_spec"):
+                        self.value_attrib_identityref(res, ch)
+
     def sample_element(self, node, parent, module, path):
         if path is None:
             return parent, module, None
@@ -335,6 +369,7 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         if node.keyword == 'rpc' or node.keyword == 'action':
             res.attrib["mode"] = "rwx"
         if node.keyword == 'leaf':
+            self.value_identityref(node, res)
             if node.i_config:
                 res.attrib["mode"] = "rw"
             elif self.node_descendant_of(node, "input"):
