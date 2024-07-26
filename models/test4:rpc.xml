@@ -8,21 +8,38 @@
   <NODE name="test" help="This is a test node in the testing-4 namespace">
     <NODE name="state" help="State">
       <NODE name="age" mode="r" help="a string"/>
-      <NODE name="reset" mode="wx" help="Reset state">
+      <NODE name="history" help="List of last reset times">
+        <NODE name="*" help="Reset time" range="0..4294967295"/>
+      </NODE>
+      <NODE name="reset" mode="rwx" help="Reset state">
         <NODE name="input" help="Input parameters">
           <NODE name="delay" mode="w" help="Number of seconds to wait before starting the reset" range="0..4294967295"/>
+        </NODE>
+        <NODE name="output" help="Output parameters">
+          <NODE name="delay" mode="r" help="Last number of seconds waited before reset" range="0..4294967295"/>
         </NODE>
       </NODE>
       <NODE name="get-last-reset-time" mode="rwx" help="Retrieve the last interface reset time">
         <NODE name="output" help="Output parameters">
           <NODE name="last-reset" mode="r" help="Time of the last reset" range="0..4294967295"/>
+          <NODE name="history" help="List of last reset times">
+            <NODE name="*" help="Last reset time" range="0..4294967295"/>
+          </NODE>
+        </NODE>
+      </NODE>
+      <NODE name="get-reset-history" mode="rwx" help="Retrieve the history of resets">
+        <NODE name="output" help="Output parameters">
+          <NODE name="last-reset" mode="r" help="Time of the last reset" range="0..4294967295"/>
+          <NODE name="history" help="List of last reset times">
+            <NODE name="*" help="Last reset time" range="0..4294967295"/>
+          </NODE>
         </NODE>
       </NODE>
       <NODE name="users" help="This is a list of users">
         <NODE name="*" help="The user entry with key name">
           <NODE name="name" mode="rw" help="This is the name of the user"/>
           <NODE name="age" mode="rw" help="Age of the user" range="0..4294967295"/>
-          <NODE name="set-age" mode="wx" help="Set the users age">
+          <NODE name="set-age" mode="rwx" help="Set the users age">
             <NODE name="input" help="Input parameters">
               <NODE name="age" mode="w" help="New age" range="0..4294967295"/>
             </NODE>
@@ -32,18 +49,30 @@
     </NODE>
   </NODE>
   <test:NODE name="operations" help="Container for all operation resources.">
-    <NODE name="reboot" mode="wx" help="Reboot operation.">
+    <NODE name="reboot" mode="rwx" help="Reboot operation.">
       <NODE name="input" help="Input parameters">
         <NODE name="delay" mode="w" help="Number of seconds to wait before initiating the reboot operation." range="0..4294967295"/>
         <NODE name="message" mode="w" help="Log message to display when reboot is started."/>
         <NODE name="language" mode="w" help="Language identifier string."/>
       </NODE>
     </NODE>
-    <NODE name="get-reboot-info" mode="rx" help="Retrieve parameters used in the last reboot operation.">
+    <NODE name="get-reboot-info" mode="rwx" help="Retrieve parameters used in the last reboot operation.">
       <NODE name="output" help="Output parameters">
         <NODE name="reboot-time" mode="r" help="The 'delay' parameter used in the last reboot operation." range="0..4294967295"/>
         <NODE name="message" mode="r" help="The 'message' parameter used in the last reboot operation."/>
         <NODE name="language" mode="r" help="The 'language' parameter used in the last reboot operation."/>
+      </NODE>
+    </NODE>
+    <NODE name="get-rpcs" mode="rwx" help="Retrieve the list of all RPCs">
+      <NODE name="output" help="Output parameters">
+        <NODE name="paths" help="List of RPCs">
+          <NODE name="*" help="An RPC">
+            <NODE name="path" mode="r" help="RPC path"/>
+            <NODE name="methods" help="List of methods this RPC supports">
+              <NODE name="*" mode="r" help="A method" pattern="POST|GET|PUT|PATCH|DELETE|HEAD|OPTIONS"/>
+            </NODE>
+          </NODE>
+        </NODE>
       </NODE>
     </NODE>
   </test:NODE>

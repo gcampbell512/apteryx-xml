@@ -1,6 +1,7 @@
+-- luacheck: globals _RPCS
 local apteryx = require('apteryx')
 
-local function reboot(path, input)
+local function reboot(input)
     if input["language"] ~= nil then
         -- generate results for test cases
         if input["language"] ~= 'en-US' then
@@ -21,7 +22,7 @@ local function reboot(path, input)
     return true
 end
 
-local function get_reboot_info(path, input)
+local function get_reboot_info()
     local info = apteryx.get_tree("/system/reboot-info")
     return {
         ["reboot-time"] = info["reboot-time"] or nil,
@@ -30,27 +31,47 @@ local function get_reboot_info(path, input)
     }
 end
 
-local function reset_state(path, input)
-    local delay = input["delay"] 
-    apteryx.set("/t4:test/state/age", delay)
-    return true
+local function get_rpcs()
+    if _RPCS ~= nil then
+        return { paths=_RPCS }
+    end
+    return { paths={} }
 end
 
-local function get_reset_time(path, input)
+local function reset_state(input, _, method)
+    if method == "GET" then
+        return { ["delay"] = apteryx.get("/t4:test/state/age") }
+    elseif method == "POST" then
+        local delay = input["delay"]
+        apteryx.set("/t4:test/state/age", delay)
+        return true
+    end
+    return false, "unsupported operation"
+end
+
+local function get_reset_time()
     return { ["last-reset"] = apteryx.get("/t4:test/state/age") }
 end
 
-local function set_age(path, input)
+local function get_reset_history()
+    local lasttime = apteryx.get("/t4:test/state/age")
+    local history = apteryx.get_tree("/t4:test/state/history")
+    return { ["last-reset"] = lasttime, ["history"] = history }
+end
+
+local function set_age(input, path)
     local user = path:match('/t4:test/state/users/([^/]+)')
-    local age = input["age"] 
+    local age = input["age"]
     apteryx.set("/t4:test/state/users/" .. user .. "/age", age)
     return true
 end
 
 return {
-    ["/operations/t4:reboot"] = reboot,
-    ["/operations/t4:get-reboot-info"] = get_reboot_info,
-    ["/t4:test/state/reset"] = reset_state,
-    ["/t4:test/state/get-last-reset-time"] = get_reset_time,
-    ["/t4:test/state/users/*/set-age"] = set_age,
+    { path="/operations/t4:reboot", methods={"POST"}, handler=reboot },
+    { path="/operations/t4:get-reboot-info", methods={"GET", "POST"}, handler=get_reboot_info },
+    { path="/operations/t4:get-rpcs", methods={"GET", "POST"}, handler=get_rpcs },
+    { path="/t4:test/state/reset", methods={"GET", "POST"}, handler=reset_state },
+    { path="/t4:test/state/get-last-reset-time", methods={"GET", "POST"}, handler=get_reset_time },
+    { path="/t4:test/state/get-reset-history", methods={"GET", "POST"}, handler=get_reset_history },
+    { path="/t4:test/state/users/*/set-age", methods={"POST"}, handler=set_age },
 }
