@@ -66,6 +66,12 @@ local function set_age(input, path)
     return true
 end
 
+local function delete_user(input, path)
+    local user = path:match('/t4:test/state/users/([^/]+)')
+    apteryx.prune("/t4:test/state/users/" .. user)
+    return true
+end
+
 return {
     { path="/operations/t4:reboot", methods={"POST"}, handler=reboot },
     { path="/operations/t4:get-reboot-info", methods={"GET", "POST"}, handler=get_reboot_info },
@@ -74,4 +80,5 @@ return {
     { path="/t4:test/state/get-last-reset-time", methods={"GET", "POST"}, handler=get_reset_time },
     { path="/t4:test/state/get-reset-history", methods={"GET", "POST"}, handler=get_reset_history },
     { path="/t4:test/state/users/*/set-age", methods={"POST"}, handler=set_age },
+    { path="/t4:test/state/users/*", methods={"DELETE"}, handler=delete_user },
 }
