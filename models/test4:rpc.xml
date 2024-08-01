@@ -39,7 +39,20 @@
         <NODE name="*" help="The user entry with key name">
           <NODE name="name" mode="rw" help="This is the name of the user"/>
           <NODE name="age" mode="rw" help="Age of the user" range="0..4294967295"/>
-          <NODE name="_" mode="rwx" help="Delete a user"/>
+          <NODE name="_" mode="rwx" help="get/add/delete users">
+            <NODE name="input" help="Input parameters">
+              <NODE name="name" mode="w" help="User name"/>
+              <NODE name="age" mode="w" help="User age" range="0..4294967295"/>
+            </NODE>
+            <NODE name="output" help="Input parameters">
+              <NODE name="users" help="This is a list of users">
+                <NODE name="*" help="The user entry with key name">
+                  <NODE name="name" mode="r" help="User name"/>
+                  <NODE name="age" mode="r" help="User age" range="0..4294967295"/>
+                </NODE>
+              </NODE>
+            </NODE>
+          </NODE>
           <NODE name="set-age" mode="rwx" help="Set the users age">
             <NODE name="input" help="Input parameters">
               <NODE name="age" mode="w" help="New age" range="0..4294967295"/>
