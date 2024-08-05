@@ -43,8 +43,14 @@
             <VALUE name="false" value="false"/>
           </NODE>
           <NODE name="groups" help="This is a leaf list of integers">
-            <NODE name="*" mode="rw" help="Member of group" range="1..9"/>
+            <NODE name="*" mode="rw" help="Member of group" range="1..999"/>
           </NODE>
+        </NODE>
+      </NODE>
+      <NODE name="rules" help="This is a list of rules with numerical indexes">
+        <NODE name="*" help="The rule entry with key index">
+          <NODE name="index" mode="rw" help="integer" range="1..999"/>
+          <NODE name="name" mode="rw" help="This is the name of the rule"/>
         </NODE>
       </NODE>
     </NODE>

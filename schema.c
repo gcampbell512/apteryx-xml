@@ -3392,6 +3392,13 @@ sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int
     return rc;
 }
 
+static int _sch_strcmp_ll (const char *stra, const char *strb)
+{
+    int a = g_ascii_strtoll (stra, NULL, 10);
+    int b = g_ascii_strtoll (strb, NULL, 10);
+    return a - b;
+}
+
 static json_t *
 _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode * node, int flags, int depth)
 {
@@ -3488,8 +3495,12 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
 
     if (sch_is_leaf_list (schema) && (flags & SCH_F_JSON_ARRAYS))
     {
+        sch_node *kschema = sch_node_child_first (schema);
+        if (kschema && xmlHasProp ((xmlNode *)kschema, (const xmlChar *)"range"))
+            apteryx_sort_children (node, _sch_strcmp_ll);
+        else
+            apteryx_sort_children (node, g_strcmp0);
         data = json_array ();
-        apteryx_sort_children (node, g_strcmp0);
 
         DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_NAME (node));
         for (GNode * child = node->children; child; child = child->next)
@@ -3515,8 +3526,12 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     }
     else if (sch_is_list (schema) && (flags & SCH_F_JSON_ARRAYS))
     {
+        sch_node *kschema = sch_node_child_first (sch_node_child_first(schema));
+        if (kschema && xmlHasProp ((xmlNode *)kschema, (const xmlChar *)"range"))
+            apteryx_sort_children (node, _sch_strcmp_ll);
+        else
+            apteryx_sort_children (node, g_strcmp0);
         data = json_array ();
-        apteryx_sort_children (node, g_strcmp0);
         for (GNode * child = node->children; child; child = child->next)
         {
             DEBUG (flags, "%*s%s[%s]\n", depth * 2, " ", APTERYX_NAME (node),
