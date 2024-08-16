@@ -47,7 +47,7 @@ EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0 jansson)
 
 all: libapteryx-xml.so libapteryx-schema.so apteryx/xml.so
 
-libapteryx-schema.so.$(ABI_VERSION): schema.o
+libapteryx-schema.so.$(ABI_VERSION): schema.o  sch_xpath.o sch_conditions.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS) -Wl,-soname,$@
 

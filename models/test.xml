@@ -3,7 +3,7 @@
         xmlns:test="http://test.com/ns/yang/testing"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="https://github.com/alliedtelesis/apteryx-xml https://github.com/alliedtelesis/apteryx-xml/releases/download/v1.2/apteryx.xsd"
-        model="testing" organization="Test Ltd" version="2023-01-01">
+        model="testing" organization="Test Ltd" version="2023-01-01" features="test-time,dummy">
   <NODE name="test" help="This is a test node">
     <NODE name="settings" help="Settings">
       <NODE name="description" mode="rw" help="string"/>
@@ -33,6 +33,24 @@
           <VALUE name="true" value="true"/>
           <VALUE name="false" value="false"/>
         </NODE>
+      </NODE>
+      <NODE name="magictime" if-feature="magic" help="magic time">
+        <NODE name="days" mode="rw" help="days" range="1..31"/>
+        <NODE name="hours" mode="rw" help="hours" range="0..23"/>
+        <NODE name="minutes" mode="rw" help="minutes" range="0..59"/>
+        <NODE name="seconds" mode="rw" help="seconds" range="0..59"/>
+      </NODE>
+      <NODE name="testtime" if-feature="test-time" help="test time">
+        <NODE name="days" mode="rw" help="days" range="1..31"/>
+        <NODE name="hours" if-feature="bogus or dummy" mode="rw" help="hours" range="0..23"/>
+        <NODE name="minutes" if-feature="bogus or dummy or mins" mode="rw" help="minutes" range="0..59"/>
+        <NODE name="seconds" if-feature="bogus or bogon or mins" mode="rw" help="seconds" range="0..59"/>
+      </NODE>
+      <NODE name="complextime" help="complex time">
+        <NODE name="days" when="../../../settings" mode="rw" help="days" range="1..31"/>
+        <NODE name="hours" when="name(../..) = 'settings'" mode="rw" help="hours" range="0..23"/>
+        <NODE name="minutes" when="name(../..) != 'settings'" mode="rw" help="minutes" range="0..59"/>
+        <NODE name="seconds" when="count(../../..) = '3'" mode="rw" help="seconds" range="0..59"/>
       </NODE>
       <NODE name="users" help="This is a list of users">
         <NODE name="*" help="The user entry with key name">
@@ -85,12 +103,26 @@
               </NODE>
               <REFRESH>Sample REFRESH node</REFRESH>
           </NODE>
-          <NODE name="toys">
+          <NODE name="config" >
+            <NODE name="type">
+              <VALUE name="big" value="1"/>
+              <VALUE name="little" value="2"/>
+            </NODE>
+          </NODE>
+          <NODE name="toys" when="test:config/test:type != '1'" >
             <NODE name="toy" help="This is a leaf list of toys">
               <NODE name="*" mode="rw" help="List of toys"/>
               <WATCH>Sample WATCH node</WATCH>
             </NODE>
           </NODE>
+          <NODE name="houses" when="../name = 'dog'">
+            <NODE name="house" help="This is a leaf list of pet houses">
+              <NODE name="*" mode="rw" help="List of houses"/>
+            </NODE>
+          </NODE>
+          <NODE name="claws" when="../../wombat" mode="rw" help="claws per paw"/>
+          <NODE name="friend" must="../../cat" mode="rw" help="animal friend"/>
+          <NODE name="n-type" when="derived-from-or-self(./type, 'a-types:type')" mode="rw" help="animal n-type"/>
         </NODE>
       </NODE>
     </NODE>

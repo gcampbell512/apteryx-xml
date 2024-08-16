@@ -319,18 +319,22 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         if hasattr(ntype, "i_type_spec") and hasattr(ntype.i_type_spec, "idbases"):
             for ch in ntype.i_type_spec.idbases:
                 sp_parts = ch.arg.split(':', 2);
-                if ch.i_module.i_prefixes is not None:
-                    for pref, mname in ch.i_module.i_prefixes.items():
-                        if pref == sp_parts[0]:
-                            module_name = mname[:][0]
-                            subm = ch.i_module.i_ctx.get_module(module_name)
-                            if subm is not None:
-                                    ns = subm.search_one('namespace')
-                                    if ns is not None and subm.i_prefix is not None:
-                                        res.attrib["idref_href"] = ns.arg
-                                        res.attrib["idref_prefix"] = subm.i_prefix
-                                        res.attrib["idref_module"] = module_name
-                                        return
+                if len(sp_parts) == 1:
+                    if ch.i_module is not None and ch.i_module.i_prefix is not None:
+                        res.attrib["idref_self"] = ch.i_module.i_prefix
+                else:
+                    if ch.i_module.i_prefixes is not None:
+                        for pref, mname in ch.i_module.i_prefixes.items():
+                            if pref == sp_parts[0]:
+                                module_name = mname[:][0]
+                                subm = ch.i_module.i_ctx.get_module(module_name)
+                                if subm is not None:
+                                        ns = subm.search_one('namespace')
+                                        if ns is not None and subm.i_prefix is not None:
+                                            res.attrib["idref_href"] = ns.arg
+                                            res.attrib["idref_prefix"] = subm.i_prefix
+                                            res.attrib["idref_module"] = module_name
+                                            return
 
     def value_identityref(self, node, res):
         ntype = node.search_one("type")
@@ -380,6 +384,29 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
                 res.attrib["mode"] = "r"
             if node.i_default is not None:
                 res.attrib["default"] = node.i_default_str
+
+        niffeature = node.search_one("if-feature")
+        if niffeature is not None:
+            res.attrib["if-feature"] = niffeature.arg
+
+        # Check for a "when" clause on an augmentation
+        if node.keyword == 'container':
+            if hasattr(node, 'i_augment'):
+                naug = node.i_augment
+                for ch in naug.i_children:
+                    for uses in ch.i_uses:
+                        nwhen = uses.search_one("when")
+                        if nwhen is not None:
+                            res.attrib["when"] = nwhen.arg
+
+        nwhen = node.search_one("when")
+        if nwhen is not None:
+            res.attrib["when"] = nwhen.arg
+
+        nmust = node.search_one("must")
+        if nmust is not None:
+            res.attrib["must"] = nmust.arg
+
         descr = node.search_one('description')
         if descr is not None:
             descr.arg = descr.arg.replace('\r', ' ').replace('\n', ' ')
