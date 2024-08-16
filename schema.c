@@ -2587,6 +2587,40 @@ bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *pare
     return rc;
 }
 
+void
+sch_check_condition (sch_node *node, GNode *root, int flags, char **path, char **condition)
+{
+    xmlChar *when_clause = xmlGetProp ((xmlNode *) node, BAD_CAST "when");
+    xmlChar *must_clause = xmlGetProp ((xmlNode *) node, BAD_CAST "must");
+    xmlChar *if_feature = xmlGetProp ((xmlNode *) node, BAD_CAST "if-feature");
+    if (when_clause)
+    {
+        if (root)
+            *path = apteryx_node_path (root);
+        *condition = g_strdup ((char *) when_clause);
+        DEBUG (flags, "when_clause <%s - %s>\n", *path, when_clause);
+        xmlFree (when_clause);
+    }
+
+    if (must_clause)
+    {
+        if (root)
+            *path = apteryx_node_path (root);
+        *condition = g_strdup ((char *) must_clause);
+        DEBUG (flags, "must_clause <%s - %s>\n", *path, must_clause);
+        xmlFree (must_clause);
+    }
+
+    if (if_feature)
+    {
+        if (root)
+            *path = apteryx_node_path (root);
+        *condition = g_strdup_printf ("if-feature(%s)", (char *) if_feature);
+        DEBUG (flags, "if_feature <%s - %s>\n", *path, if_feature);
+        xmlFree (if_feature);
+    }
+}
+
 static GNode *
 _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, const char *path, int flags, int depth)
 {
@@ -3433,6 +3467,8 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     json_t *data = NULL;
     char *colon;
     char *name;
+    char *condition = NULL;
+    char *path = NULL;
 
     /* Get the actual node name */
     if (depth == 0 && strlen (APTERYX_NAME (node)) == 1)
@@ -3519,6 +3555,23 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
                ns ? (char *) ns->prefix : "", ns ? ":" : "", name);
         free (name);
         return NULL;
+    }
+
+    if ((flags & SCH_F_CONDITIONS))
+    {
+        sch_check_condition (schema, node, flags, &path, &condition);
+        if (condition)
+        {
+            if (!sch_process_condition (instance, node, path, condition))
+            {
+                g_free (condition);
+                g_free (path);
+                free (name);
+                return NULL;
+            }
+            g_free (condition);
+            g_free (path);
+        }
     }
 
     if (sch_is_leaf_list (schema) && (flags & SCH_F_JSON_ARRAYS))
@@ -3931,4 +3984,134 @@ sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, in
         g_node_append (root, node);
     }
     return root;
+}
+
+static bool
+_sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode * parent, int flags)
+{
+    char *name = sch_name (schema);
+    GNode *child = apteryx_find_child (parent, name);
+    char *condition = NULL;
+    char *path = NULL;
+    bool rc = true;
+
+    if (sch_is_proxy (schema) && g_strcmp0 (name, "*") == 0)
+    {
+        xmlNs *nns = NULL;
+        char *colon;
+
+        /* move to the list index specifier */
+        child = parent->children;
+        if (!child)
+        {
+            rc = false;
+            goto exit;
+        }
+        /* skip over the list index specifier */
+        child = child->children;
+        if (!child)
+        {
+            rc = false;
+            goto exit;
+        }
+        g_free (name);
+        name = g_strdup (APTERYX_NAME (child));
+        schema = xmlDocGetRootElement (instance->doc);
+        colon = strchr (name, ':');
+        if (schema && colon)
+        {
+            colon[0] = '\0';
+            nns = sch_lookup_ns (instance, schema, name, flags, false);
+            if (!nns)
+            {
+                /* No namespace found assume the node is supposed to have a colon in it */
+                colon[0] = ':';
+            }
+            else
+            {
+                /* We found a namespace. Remove the prefix */
+                char *_name = name;
+                name = g_strdup (colon + 1);
+                free (_name);
+            }
+        }
+        schema = _sch_node_child (nns, schema, name);
+        if (schema)
+        {
+            g_free (name);
+            name = sch_name (schema);
+        }
+        else
+        {
+            /* This can happen if a query is for a field of the proxy schema itself */
+            rc = false;
+            goto exit;
+        }
+    }
+
+    /* Check the YANG condition if we have a node with a child with data */
+    if (child && child->children && ((char *) child->children->data)[0] != '\0')
+    {
+        sch_check_condition (schema, child, flags, &path, &condition);
+        if (condition)
+        {
+            if (!sch_process_condition (instance, child, path, condition))
+            {
+                g_free (condition);
+                g_free (path);
+                rc = false;
+                goto exit;
+            }
+            g_free (condition);
+            g_free (path);
+        }
+    }
+
+    if (!sch_is_leaf (schema))
+    {
+        if (g_strcmp0 (name, "*") == 0)
+        {
+            for (GNode *child = parent->children; child; child = child->next)
+            {
+                for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+                {
+                    rc = _sch_apply_conditions (instance, s, child, flags);
+                    if (!rc)
+                        goto exit;
+                }
+            }
+        }
+        else if (!sch_is_leaf_list (schema) && child)
+        {
+            for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+            {
+                rc = _sch_apply_conditions (instance, s, child, flags);
+                if (!rc)
+                    goto exit;
+            }
+        }
+    }
+
+exit:
+    free (name);
+    return rc;
+}
+
+bool
+sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode *node, int flags)
+{
+    bool rc = false;
+
+    schema = sch_traverse_get_schema (instance, node, flags);
+    if (schema)
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            rc = _sch_apply_conditions (instance, s, node, flags);
+            if (!rc)
+                break;
+        }
+    }
+
+    return rc;
 }
