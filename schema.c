@@ -3149,6 +3149,12 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
             g_free (name);
             name = sch_name (schema);
         }
+        else
+        {
+            /* This can happen if a query is for a field of the proxy schema itself */
+            rc = false;
+            goto exit;
+        }
         depth++;
     }
 
