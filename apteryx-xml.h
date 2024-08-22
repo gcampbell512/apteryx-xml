@@ -95,6 +95,7 @@ bool sch_is_executable (sch_node * node);
 bool sch_is_hidden (sch_node * node);
 bool sch_is_config (sch_node * node);
 bool sch_is_proxy (sch_node * node);
+bool sch_is_read_only_proxy (sch_node * node);
 char *sch_translate_to (sch_node * node, char *value);
 char *sch_translate_from (sch_node * node, char *value);
 bool sch_validate_pattern (sch_node * node, const char *value);
@@ -120,6 +121,7 @@ typedef enum
     SCH_F_SET_NULL              = (1 << 13), /* Set all nodes to NULL */
     SCH_F_FILTER_RDEPTH         = (1 << 14), /* Set filter based on depth value */
     SCH_F_IDREF_VALUES          = (1 << 15), /* Expand identityref based values to include type information */
+    SCH_F_MODIFY_DATA           = (1 << 16), /* The created tree will be used to modify the associated model */
 } sch_flags;
 GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char * path, int flags, sch_node ** rschema);
 bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags);

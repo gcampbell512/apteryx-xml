@@ -1798,6 +1798,20 @@ sch_is_proxy (sch_node * node)
     return access;
 }
 
+bool
+sch_is_read_only_proxy (sch_node * node)
+{
+    xmlNode *xml = (xmlNode *) node;
+    bool read_only = false;
+    char *mode = (char *) xmlGetProp (xml, (xmlChar *) "mode");
+    if (mode && strchr (mode, 'p') != NULL && strchr (mode, 'r') != NULL)
+    {
+        read_only = true;
+    }
+    free (mode);
+    return read_only;
+}
+
 char *
 sch_translate_to (sch_node * node, char *value)
 {
@@ -2590,6 +2604,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
     char *name = NULL;
     sch_node *last_good_schema = NULL;
     bool is_proxy = false;
+    bool read_only = false;
 
     if (path && path[0] == '/')
     {
@@ -2656,6 +2671,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
             if (!child)
             {
                 is_proxy = sch_is_proxy (schema);
+                read_only = sch_is_read_only_proxy (schema);
             }
         }
 
@@ -2686,6 +2702,12 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
 
         last_good_schema = schema;
         schema = _sch_node_child (ns, schema, name);
+        if ((flags & SCH_F_MODIFY_DATA) && schema && read_only)
+        {
+            ERROR (flags, SCH_E_NOTWRITABLE, "Node not writable \"%s\"\n", name);
+            goto exit;
+        }
+
         if ((flags & SCH_F_XPATH) && schema == NULL && g_strcmp0 (name, "*") == 0)
         {
             GList *path_list = NULL;
