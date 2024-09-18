@@ -2437,7 +2437,7 @@ parse_query_fields (sch_node * schema, char *fields, GNode *parent, int flags, i
 }
 
 static bool
-_sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, int depth)
+_sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, int depth, int *param_depth)
 {
     int flags = rflags? * rflags : 0;
     GNode *node;
@@ -2503,7 +2503,10 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
                 }
                 if (qdepth == 1)
                     flags |= SCH_F_DEPTH_ONE;
+
+                *param_depth = qdepth;
             }
+            flags |= SCH_F_DEPTH;
             depth_seen = true;
         }
         else if (strncmp (parameter, "with-defaults=", strlen ("with-defaults=")) == 0)
@@ -2556,7 +2559,7 @@ _sch_query_to_gnode (GNode *root, sch_node *schema, char *query, int *rflags, in
     else
     {
         if (qdepth != INT_MAX)
-            qdepth += depth;
+            qdepth = depth;
         for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
         {
             /* Recurse tree only adding config elements */
@@ -2578,10 +2581,12 @@ exit:
     return rc;
 }
 
-bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags)
+bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags,
+                         int *rflags, int *param_depth)
 {
     int _flags = flags;
-    bool rc = _sch_query_to_gnode (parent, schema ?: xmlDocGetRootElement (instance->doc), (char *) query, &_flags, 0);
+    bool rc = _sch_query_to_gnode (parent, schema ?: xmlDocGetRootElement (instance->doc), (char *) query,
+                                   &_flags, 0, param_depth);
     if (rflags)
         *rflags = _flags;
     return rc;
@@ -2906,6 +2911,7 @@ sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path,
     char *query;
     GNode *root;
     int depth;
+    int param_depth = 0;
 
     /* Split off any query first */
     query = strchr (path, '?');
@@ -2931,7 +2937,7 @@ sch_path_to_query (sch_instance * instance, sch_node * schema, const char *path,
 
     /* Process the query */
     depth = g_node_max_height (root);
-    if (query && !_sch_query_to_gnode (root, schema, query, &flags, depth))
+    if (query && !_sch_query_to_gnode (root, schema, query, &flags, depth, &param_depth))
     {
         apteryx_free_tree (root);
         root = NULL;
@@ -3586,21 +3592,24 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
         DEBUG (flags, "%*s%s[", depth * 2, " ", APTERYX_NAME (node));
         for (GNode * child = node->children; child; child = child->next)
         {
-            bool added = false;
-            if (flags & SCH_F_JSON_TYPES)
+            if (child->children)
             {
-                sch_node *cschema = sch_node_child_first (schema);
-                char *value = g_strdup (APTERYX_VALUE (child) ?: "");
-                value = sch_translate_to (cschema, value);
-                json_array_append_new (data, encode_json_type (cschema, value));
-                DEBUG (flags, "%s%s", value, child->next ? ", " : "");
-                free (value);
-                added = true;
-            }
-            if (!added)
-            {
-                DEBUG (flags, "%s%s", APTERYX_VALUE (child), child->next ? ", " : "");
-                json_array_append_new (data, json_string ((const char* ) APTERYX_VALUE (child)));
+                bool added = false;
+                if (flags & SCH_F_JSON_TYPES)
+                {
+                    sch_node *cschema = sch_node_child_first (schema);
+                    char *value = g_strdup (APTERYX_VALUE (child) ?: "");
+                    value = sch_translate_to (cschema, value);
+                    json_array_append_new (data, encode_json_type (cschema, value));
+                    DEBUG (flags, "%s%s", value, child->next ? ", " : "");
+                    free (value);
+                    added = true;
+                }
+                if (!added)
+                {
+                    DEBUG (flags, "%s%s", APTERYX_VALUE (child), child->next ? ", " : "");
+                    json_array_append_new (data, json_string ((const char* ) APTERYX_VALUE (child)));
+                }
             }
         }
         DEBUG (flags, "]\n");
@@ -3652,6 +3661,9 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
         sch_gnode_sort_children (schema, node);
         for (GNode * child = node->children; child; child = child->next)
         {
+            if (!child->data && (flags & SCH_F_DEPTH))
+                continue;
+
             json_t *node = _sch_gnode_to_json (instance, schema, ns, child, flags, depth + 1);
             bool added = false;
             if (flags & SCH_F_NS_PREFIX)
@@ -3674,7 +3686,8 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
                 json_object_set_new (data, APTERYX_NAME (child), node);
         }
         /* Throw away this node if no chldren (unless it's a presence container) */
-        if (json_object_iter (data) == NULL && ((xmlNode *)schema)->children)
+        if ((flags & SCH_F_DEPTH) == 0 && json_object_iter (data) == NULL &&
+            ((xmlNode *)schema)->children)
         {
             json_decref (data);
             data = NULL;
@@ -4108,6 +4121,205 @@ sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode *node, i
         for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
         {
             rc = _sch_apply_conditions (instance, s, node, flags);
+            if (!rc)
+                break;
+        }
+    }
+
+    return rc;
+}
+
+static bool
+_sch_trim_tree_by_depth (sch_instance *instance, sch_node *schema, GNode *parent, int flags, int depth, int rdepth)
+{
+    char *name = sch_name (schema);
+    GNode *child = apteryx_find_child (parent, name);
+    bool rc = true;
+
+    if (sch_is_proxy (schema) && g_strcmp0 (name, "*") == 0)
+    {
+        xmlNs *nns = NULL;
+        char *colon;
+
+        /* move to the list index specifier */
+        child = parent->children;
+        if (!child)
+        {
+            rc = false;
+            goto exit;
+        }
+        /* skip over the list index specifier */
+        child = child->children;
+        if (!child)
+        {
+            rc = false;
+            goto exit;
+        }
+        g_free (name);
+        name = g_strdup (APTERYX_NAME (child));
+        schema = xmlDocGetRootElement (instance->doc);
+        colon = strchr (name, ':');
+        if (schema && colon)
+        {
+            colon[0] = '\0';
+            nns = sch_lookup_ns (instance, schema, name, flags, false);
+            if (!nns)
+            {
+                /* No namespace found assume the node is supposed to have a colon in it */
+                colon[0] = ':';
+            }
+            else
+            {
+                /* We found a namespace. Remove the prefix */
+                char *_name = name;
+                name = g_strdup (colon + 1);
+                free (_name);
+            }
+        }
+        schema = _sch_node_child (nns, schema, name);
+        if (schema)
+        {
+            g_free (name);
+            name = sch_name (schema);
+        }
+        else
+        {
+            /* This can happen if a query is for a field of the proxy schema itself */
+            rc = false;
+            goto exit;
+        }
+        depth++;
+    }
+
+    if (sch_is_leaf_list (schema))
+    {
+        if (depth >= rdepth - 1)
+        {
+            GList *deletes = NULL;
+            if (g_strcmp0 (name, APTERYX_NAME (parent->children)) == 0)
+            {
+                for (GNode *pcc = parent->children->children; pcc; pcc = pcc->next)
+                    deletes = g_list_prepend (deletes, pcc);
+
+                for (GList *iter = g_list_first (deletes); iter; iter = g_list_next (iter))
+                {
+                    GNode *pc = iter->data;
+                    g_node_unlink (pc);
+                    apteryx_free_tree (pc);
+                }
+                g_list_free (deletes);
+            }
+        }
+    }
+    else if (sch_is_leaf (schema))
+    {
+        if ((depth >= rdepth) && child)
+        {
+            free ((void *)child->children->data);
+            free ((void *)child->data);
+            g_node_unlink (child);
+            g_node_destroy (child);
+            child = NULL;
+        }
+    }
+    else if (g_strcmp0 (name, "*") == 0)
+    {
+        if (depth < rdepth)
+        {
+            for (GNode *child = parent->children; child; child = child->next)
+            {
+                for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+                {
+                    rc = _sch_trim_tree_by_depth (instance, s, child, flags, depth+1, rdepth);
+                    if (!rc)
+                        goto exit;
+                }
+            }
+        }
+    }
+    else if (child && depth < rdepth)
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            if (depth + 2 >= rdepth)
+            {
+                GList *deletes = NULL;
+                for (GNode *cc = child->children; cc; cc = cc->next)
+                    deletes = g_list_prepend (deletes, cc);
+
+                for (GList *iter = g_list_first (deletes); iter; iter = g_list_next (iter))
+                {
+                    GNode *cc = iter->data;
+                    g_node_unlink (cc);
+                    apteryx_free_tree (cc);
+                }
+                g_list_free (deletes);
+                break;
+            }
+
+            rc = _sch_trim_tree_by_depth (instance, s, child, flags, depth+1, rdepth);
+            if (!rc)
+                goto exit;
+        }
+    }
+
+exit:
+    free (name);
+    return rc;
+}
+
+bool
+sch_trim_tree_by_depth (sch_instance *instance, sch_node *schema, GNode *node, int flags, int rdepth)
+{
+    bool rc = false;
+
+    schema = schema ?: xmlDocGetRootElement (instance->doc);
+    /* if this has been called from restconf, then the schema may be at a proxy node */
+    if (sch_is_proxy (schema))
+    {
+        xmlNs *nns = NULL;
+        char *colon;
+        char *name;
+
+        /* move to the list index specifier */
+        node = node->children;
+        if (!node)
+            return rc;
+        name = g_strdup (APTERYX_NAME (node));
+        schema = xmlDocGetRootElement (instance->doc);
+        colon = strchr (name, ':');
+        if (schema && colon)
+        {
+            colon[0] = '\0';
+            nns = sch_lookup_ns (instance, schema, name, flags, false);
+            if (!nns)
+            {
+                /* No namespace found assume the node is supposed to have a colon in it */
+                colon[0] = ':';
+            }
+            else
+            {
+                /* We found a namespace. Remove the prefix */
+                char *_name = name;
+                name = g_strdup (colon + 1);
+                free (_name);
+            }
+        }
+        schema = _sch_node_child (nns, schema, name);
+        g_free (name);
+        if (!schema)
+            return rc;
+    }
+
+    if (sch_is_leaf (schema))
+    {
+        rc = _sch_trim_tree_by_depth (instance, schema, node->parent, flags, 0, rdepth);
+    }
+    else
+    {
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+        {
+            rc = _sch_trim_tree_by_depth (instance, s, node, flags, 0, rdepth);
             if (!rc)
                 break;
         }

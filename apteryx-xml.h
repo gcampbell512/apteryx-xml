@@ -123,14 +123,17 @@ typedef enum
     SCH_F_IDREF_VALUES          = (1 << 15), /* Expand identityref based values to include type information */
     SCH_F_MODIFY_DATA           = (1 << 16), /* The created tree will be used to modify the associated model */
     SCH_F_CONDITIONS            = (1 << 17), /* Check the schema node for any condition attributes */
+    SCH_F_DEPTH                 = (1 << 18), /* Query to a specific depth */
 } sch_flags;
 GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char * path, int flags, sch_node ** rschema);
-bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags, int *rflags);
+bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags,
+                         int *rflags, int *param_depth);
 bool sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags, int rdepth);
 GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char * path, int flags); //DEPRECATED
 void sch_gnode_sort_children (sch_node * schema, GNode * parent);
 void sch_check_condition (sch_node *node, GNode *root, int flags, char **path, char **condition);
 bool sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode *node, int flags);
+bool sch_trim_tree_by_depth (sch_instance *instance, sch_node *schema, GNode *node, int flags, int rdepth);
 
 #ifdef APTERYX_XML_JSON
 #include <jansson.h>
