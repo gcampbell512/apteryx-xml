@@ -423,7 +423,7 @@ sch_xpath_scan_number (xpath_scanner *xpar)
 
             while (sch_xpath_is_ascii_digit (xpar->cur_char))
                 sch_xpath_next_char (xpar);
-            ERROR ("%s:%u Invalid exponental number\n", __func__, __LINE__);
+            DEBUG ("%s:%u Invalid exponental number\n", __func__, __LINE__);
         }
     }
 }
@@ -520,7 +520,7 @@ sch_xpath_scan_string (xpath_scanner *xpar)
     if (!end)
     {
         sch_xpath_set_source_index (xpar, xpar->xpath_expr_len);
-        ERROR ("%s:%u Unterminated xpath string\n", __func__, __LINE__);
+        DEBUG ("%s:%u Unterminated xpath string\n", __func__, __LINE__);
         return;
     }
 
@@ -582,12 +582,12 @@ sch_xpath_check_token (xpath_scanner *xpar, int kind)
 
         if (kind == XPATH_KIND_EOF)
         {
-            ERROR ("%s:%u Expected end of the expression, found %s\n", __func__, __LINE__,
+            DEBUG ("%s:%u Expected end of the expression, found %s\n", __func__, __LINE__,
                    err_str);
         }
         else
         {
-            ERROR ("%s:%u Expected token %s, found %s\n", __func__, __LINE__,
+            DEBUG ("%s:%u Expected token %s, found %s\n", __func__, __LINE__,
                    sch_xpath_kind_to_string (kind), err_str);
         }
 
@@ -1134,7 +1134,7 @@ sch_xpath_internal_parse_node_test (GList **stack, xpath_scanner *xpar, xpath_ax
         *node_name = NULL;
         *node_type = XPATH_NODE_TYPE_UNKNOWN;
         value = sch_xpath_raw_value (xpar);
-        ERROR ("%s:%u Expected a node test, found %s\n", __func__, __LINE__, value);
+        DEBUG ("%s:%u Expected a node test, found %s\n", __func__, __LINE__, value);
         g_free (value);
     }
 }
@@ -1175,7 +1175,7 @@ sch_xpath_parse_step (GList **stack, xpath_scanner *xpar)
         opnd = bld_funcs.axis (XPATH_AXIS_SELF, XPATH_NODE_TYPE_ALL, NULL, NULL);
         if (XPATH_KIND_LBRACKET == xpar->kind)
         {
-            ERROR ("%s:%u Abbreviated step '.' cannot be followed by a predicate\n",
+            DEBUG ("%s:%u Abbreviated step '.' cannot be followed by a predicate\n",
                    __func__, __LINE__);
             sch_xpath_free_node (opnd);
             opnd = NULL;
@@ -1187,7 +1187,7 @@ sch_xpath_parse_step (GList **stack, xpath_scanner *xpar)
         opnd = bld_funcs.axis (XPATH_AXIS_PARENT, XPATH_NODE_TYPE_ALL, NULL, NULL);
         if (XPATH_KIND_LBRACKET == xpar->kind)
         {
-            ERROR ("%s:%u Abbreviated step '..' cannot be followed by a predicate\n",
+            DEBUG ("%s:%u Abbreviated step '..' cannot be followed by a predicate\n",
                    __func__, __LINE__);
             sch_xpath_free_node (opnd);
             opnd = NULL;
@@ -1213,7 +1213,7 @@ sch_xpath_parse_step (GList **stack, xpath_scanner *xpar)
             axis = XPATH_AXIS_CHILD;
             break;
         default:
-            ERROR ("%s:%u Unexpected token %d in the expression\n", __func__, __LINE__,
+            DEBUG ("%s:%u Unexpected token %d in the expression\n", __func__, __LINE__,
                    xpar->kind);
             return NULL;
         }
