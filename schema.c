@@ -1275,6 +1275,12 @@ sch_lookup (sch_instance * instance, const char *path)
     return lookup_node (instance, NULL, xmlDocGetRootElement (instance->doc), path);
 }
 
+sch_node *
+sch_lookup_with_ns (sch_instance * instance, sch_ns *ns, const char *path)
+{
+    return lookup_node (instance, (xmlNs *) ns, xmlDocGetRootElement (instance->doc), path);
+}
+
 static sch_node *
 _sch_node_child (xmlNs *ns, sch_node * parent, const char *child)
 {
