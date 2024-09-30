@@ -19,6 +19,7 @@ CC:=$(CROSS_COMPILE)gcc
 LD:=$(CROSS_COMPILE)ld
 PKG_CONFIG ?= pkg-config
 APTERYX_PATH ?=
+PYANG = pyang --plugindir . -p ./models
 
 ABI_VERSION=1.4
 CFLAGS := $(CFLAGS) -g -O2
@@ -45,9 +46,9 @@ endif
 EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0 jansson)
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0 jansson)
 
-all: libapteryx-xml.so libapteryx-schema.so apteryx/xml.so
+all: libapteryx-xml.so libapteryx-schema.so apteryx/xml.so models/ietf-yang-library.xml
 
-libapteryx-schema.so.$(ABI_VERSION): schema.o  sch_xpath.o sch_conditions.o
+libapteryx-schema.so.$(ABI_VERSION): schema.o  sch_xpath.o sch_conditions.o sch_yang_library.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS) -Wl,-soname,$@
 
@@ -87,6 +88,9 @@ TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 $(eval $(TEST_ARGS):;@:)
 endif
 
+models/ietf-yang-library.xml: models/ietf-yang-library.yang
+	$(PYANG) -f apteryx-xml $< > $@
+
 test: unittest
 	@echo "Running XML unit tests"
 	$(Q)$(call apteryxd,unittest -u$(TEST_ARGS))
@@ -95,6 +99,7 @@ test: unittest
 install: all
 	$(Q)install -d $(DESTDIR)/etc/apteryx/schema
 	$(Q)install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
+	$(Q)install -D -m 0644 models/ietf-yang-library.xml $(DESTDIR)/etc/apteryx/schema/
 	$(Q)install -d $(DESTDIR)/$(PREFIX)/$(LIBDIR)
 	$(Q)install -D libapteryx-xml.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/
 	$(Q)install -D libapteryx-schema.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/
@@ -107,6 +112,6 @@ install: all
 
 clean:
 	@echo "Cleaning..."
-	@rm -fr libapteryx-schema.so* libapteryx-xml.so* apteryx/xml.so unittest *.o
+	@rm -fr libapteryx-schema.so* libapteryx-xml.so* apteryx/xml.so unittest *.o models/ietf-yang-library.xml
 
 .PHONY: all clean

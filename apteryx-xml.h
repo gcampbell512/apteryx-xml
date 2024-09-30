@@ -45,6 +45,8 @@ typedef struct _sch_loaded_model
     char *version;
     char *features;
     char *deviations;
+    char *filename;
+    bool loaded;
 } sch_loaded_model;
 
 /* Schema */
@@ -54,6 +56,7 @@ typedef void sch_ns;
 sch_instance *sch_load (const char *path);
 sch_instance *sch_load_with_model_list_filename (const char *path,
                                                  const char *model_list_filename);
+sch_instance *sch_load_model_list_yang_library (const char *path);
 void sch_free (sch_instance * instance);
 sch_node *sch_lookup (sch_instance * instance, const char *path);
 sch_node *sch_lookup_with_ns (sch_instance * instance, sch_ns *ns, const char *path);
@@ -137,6 +140,26 @@ void sch_gnode_sort_children (sch_node * schema, GNode * parent);
 void sch_check_condition (sch_node *node, GNode *root, int flags, char **path, char **condition);
 bool sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode *node, int flags);
 bool sch_trim_tree_by_depth (sch_instance *instance, sch_node *schema, GNode *node, int flags, int rdepth);
+
+#define YANG_LIBRARY_CONTROL_PATH "/yang-library-control"
+#define YANG_LIBRARY_CONTROL_STATE YANG_LIBRARY_CONTROL_PATH "/state"
+#define YANG_LIBRARY_MOD_SET_COMMON_MOD "/yang-library/module-set/common/module"
+
+/* A server-generated identifier of the contents of the '/yang-library' tree. */
+#define YANG_LIBRARY_CONTENT_ID "/yang-library/content-id"
+
+typedef enum
+{
+    YANG_LIBRARY_S_NONE     = 0,  /* Zero state */
+    YANG_LIBRARY_S_CREATED  = 1,  /* yang-library databse entry created */
+    YANG_LIBRARY_S_LOADING   = 2, /* yang-library models being loaded */
+    YANG_LIBRARY_S_READY    = 3,  /* yang-library models fully loaded */
+} yang_library_state;
+
+void yang_library_control_set_state (int state);
+volatile int yang_library_control_get_state (void);
+void yang_library_add_model_information (sch_loaded_model *loaded);
+void yang_library_create (sch_instance *schema);
 
 #ifdef APTERYX_XML_JSON
 #include <jansson.h>
