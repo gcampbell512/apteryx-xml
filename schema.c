@@ -3800,6 +3800,23 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
     return json;
 }
 
+/* List keys should not have a '/' in them.
+   Instead we escape it as %2F when storing in apteryx */
+static char *
+generate_list_key_from_value (const char *value)
+{
+    GString *key = g_string_new (NULL);
+    while (*value)
+    {
+        if (*value == '/')
+            g_string_append_printf (key, "%%%02X", *value);
+        else
+            g_string_append_c (key, *value);
+        value++;
+    }
+    return g_string_free (key, false);
+}
+
 static GNode *
 _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
                    json_t * json, const char *name, int flags, int depth)
@@ -3859,9 +3876,9 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
                     return NULL;
                 }
             }
-            APTERYX_LEAF_STRING (tree, value, value);
-            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", value, value);
-            free (value);
+            char *key = generate_list_key_from_value (value);
+            APTERYX_LEAF (tree, key, value);
+            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", key, value);
         }
     }
     /* LIST */
@@ -3892,7 +3909,9 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
                 return NULL;
             }
 
-            node = APTERYX_NODE (tree, kname);
+            char *key = generate_list_key_from_value (kname);
+            node = APTERYX_NODE (tree, key);
+            free (kname);
             DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
 
             /* Prepend each key-value pair of this object into the node */
