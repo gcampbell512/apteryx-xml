@@ -45,6 +45,8 @@ typedef struct _sch_loaded_model
     char *version;
     char *features;
     char *deviations;
+    char *filename;
+    bool loaded;
 } sch_loaded_model;
 
 /* Schema */
@@ -53,7 +55,9 @@ typedef void sch_node;
 typedef void sch_ns;
 sch_instance *sch_load (const char *path);
 sch_instance *sch_load_with_model_list_filename (const char *path,
-                                                 const char *model_list_filename);
+                                                 const char *model_list_filename,
+                                                 bool load_unsupported);
+sch_instance *sch_load_model_list_yang_library (const char *path, bool load_unsupported);
 void sch_free (sch_instance * instance);
 sch_node *sch_lookup (sch_instance * instance, const char *path);
 sch_node *sch_lookup_with_ns (sch_instance * instance, sch_ns *ns, const char *path);
@@ -135,6 +139,47 @@ void sch_gnode_sort_children (sch_node * schema, GNode * parent);
 void sch_check_condition (sch_node *node, GNode *root, int flags, char **path, char **condition);
 bool sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode *node, int flags);
 bool sch_trim_tree_by_depth (sch_instance *instance, sch_node *schema, GNode *node, int flags, int rdepth);
+
+#define YANG_LIBRARY_CONTROL_PATH "/yang-library-control"
+#define YANG_LIBRARY_CONTROL_STATE YANG_LIBRARY_CONTROL_PATH "/state"
+#define YANG_LIBRARY_CONTROL_MODEL YANG_LIBRARY_CONTROL_PATH "/model"
+#define YANG_LIBRARY_CONTROL_MODEL_NAME "name"
+#define YANG_LIBRARY_CONTROL_MODEL_ACTION "action"
+#define YANG_LIBRARY_CONTROL_MODEL_FEATURES "features"
+#define YANG_LIBRARY_MOD_SET_COMMON_MOD "/yang-library/module-set/common/module"
+/* A server-generated identifier of the contents of the '/yang-library' tree. */
+#define YANG_LIBRARY_CONTENT_ID "/yang-library/content-id"
+
+typedef enum
+{
+    YANG_LIBRARY_F_NONE             = 0,        /* Zero flag */
+    YANG_LIBRARY_F_LOAD             = (1 << 0), /* Action load of a model */
+    YANG_LIBRARY_F_UNLOAD           = (1 << 1), /* Action unload of a model */
+    YANG_LIBRARY_F_ADD_FEATURES     = (1 << 2), /* Action the addition of new "features" to a model */
+    YANG_LIBRARY_F_REMOVE_FEATURES  = (1 << 3), /* Action the removeal of "features" from a model */
+} yang_library_flags;
+
+typedef enum
+{
+    YANG_LIBRARY_S_NONE     = 0,  /* Zero state */
+    YANG_LIBRARY_S_CREATED  = 1,  /* yang-library databse entry created */
+    YANG_LIBRARY_S_LOADING   = 2, /* yang-library models being loaded */
+    YANG_LIBRARY_S_READY    = 3,  /* yang-library models fully loaded */
+} yang_library_state;
+
+typedef bool (*yang_library_callback) (const char *, int, const char *);
+
+void yang_library_control_set_state (int state);
+volatile int yang_library_control_get_state (void);
+void yang_library_remove_model_information (sch_loaded_model *loaded);
+void yang_library_update_feature_information (sch_loaded_model *loaded);
+void yang_library_add_model_information (sch_loaded_model *loaded);
+bool yang_library_update_content_id (void);
+void yang_library_create (sch_instance *schema);
+bool yang_library_watch_handler (GNode *tree);
+void yang_library_shutdown (void);
+int yang_library_init (yang_library_callback cb);
+bool sch_update_model (sch_instance * instance, const char *model, int flags, const char *features);
 
 #ifdef APTERYX_XML_JSON
 #include <jansson.h>
