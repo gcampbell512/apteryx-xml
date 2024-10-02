@@ -400,6 +400,7 @@ add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *
                              xmlChar *ver, xmlChar *feat, xmlChar *devi)
 {
     xmlNode *n = node;
+    xmlNode *s = node;
     while (n)
     {
         if (n->ns && g_strcmp0 ((char *)n->ns->href, (char *)ns->href) == 0)
@@ -411,6 +412,22 @@ add_module_info_to_children (xmlNode *node, xmlNsPtr ns, xmlChar *mod, xmlChar *
                 xmlNewProp (n, (const xmlChar *)"version", ver);
                 xmlNewProp (n, (const xmlChar *)"features", feat);
                 xmlNewProp (n, (const xmlChar *)"deviations", devi);
+                s = sch_node_next_sibling ((sch_node *) n);
+                while (s)
+                {
+                    if (s->ns && g_strcmp0 ((char *)s->ns->href, (char *)ns->href) == 0)
+                    {
+                        if (!xmlHasProp (s, (const xmlChar *)"model"))
+                        {
+                            xmlNewProp (s, (const xmlChar *)"model", mod);
+                            xmlNewProp (s, (const xmlChar *)"organization", org);
+                            xmlNewProp (s, (const xmlChar *)"version", ver);
+                            xmlNewProp (s, (const xmlChar *)"features", feat);
+                            xmlNewProp (s, (const xmlChar *)"deviations", devi);
+                        }
+                    }
+                    s = sch_node_next_sibling ((sch_node *) s);
+                }
             }
         }
         else
