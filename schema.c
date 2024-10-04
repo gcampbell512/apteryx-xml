@@ -3334,7 +3334,7 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
     }
     else if (sch_is_leaf_list (schema))
     {
-        if (flags & SCH_F_SET_NULL)
+        if (child && (flags & SCH_F_SET_NULL))
         {
             if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
             {
