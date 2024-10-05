@@ -3527,8 +3527,12 @@ static int _sch_strcmp_ll (const char *stra, const char *strb)
     return a - b;
 }
 
+/*
+ * root - pointer to original top of tree
+ * node - where we are in recursive descent
+ */
 static json_t *
-_sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode * node, int flags, int depth)
+_sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode * root, GNode * node, int flags, int depth)
 {
     json_t *data = NULL;
     char *colon;
@@ -3539,7 +3543,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
     /* Get the actual node name */
     if (depth == 0 && strlen (APTERYX_NAME (node)) == 1)
     {
-        return _sch_gnode_to_json (instance, schema, ns, node->children, flags, depth);
+        return _sch_gnode_to_json (instance, schema, ns, root, node->children, flags, depth);
     }
     else if (depth == 0 && APTERYX_NAME (node)[0] == '/')
     {
@@ -3628,7 +3632,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
         sch_check_condition (schema, node, flags, &path, &condition);
         if (condition)
         {
-            if (!sch_process_condition (instance, node, path, condition))
+            if (!sch_process_condition (instance, root, path, condition))
             {
                 g_free (condition);
                 g_free (path);
@@ -3690,7 +3694,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
             sch_gnode_sort_children (sch_node_child_first (schema), child);
             for (GNode * field = child->children; field; field = field->next)
             {
-                json_t *node = _sch_gnode_to_json (instance, sch_node_child_first (schema), ns, field, flags, depth + 1);
+                json_t *node = _sch_gnode_to_json (instance, sch_node_child_first (schema), ns, root, field, flags, depth + 1);
                 bool added = false;
                 if (flags & SCH_F_NS_PREFIX)
                 {
@@ -3724,7 +3728,7 @@ _sch_gnode_to_json (sch_instance * instance, sch_node * schema, xmlNs *ns, GNode
             if (!child->data && (flags & SCH_F_DEPTH))
                 continue;
 
-            json_t *node = _sch_gnode_to_json (instance, schema, ns, child, flags, depth + 1);
+            json_t *node = _sch_gnode_to_json (instance, schema, ns, root, child, flags, depth + 1);
             bool added = false;
             if (flags & SCH_F_NS_PREFIX)
             {
@@ -3817,7 +3821,7 @@ sch_gnode_to_json (sch_instance * instance, sch_node * schema, GNode * node, int
     json_t *child;
 
     tl_error = SCH_E_SUCCESS;
-    child = _sch_gnode_to_json (instance, pschema, ns, node, flags, g_node_depth (node) - 1);
+    child = _sch_gnode_to_json (instance, pschema, ns, node, node, flags, g_node_depth (node) - 1);
     if (child)
     {
         char *name;
@@ -3930,9 +3934,9 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
                     return NULL;
                 }
             }
-            char *key = generate_list_key_from_value (value);
-            APTERYX_LEAF (tree, key, value);
-            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", key, value);
+            char *lkey = generate_list_key_from_value (value);
+            APTERYX_LEAF (tree, lkey, value);
+            DEBUG (flags, "%*s%s = %s\n", depth * 2, " ", lkey, value);
         }
     }
     /* LIST */
@@ -3960,11 +3964,12 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
             {
                 ERROR (flags, SCH_E_KEYMISSING, "List \"%s\" missing key \"%s\"\n", name, key);
                 apteryx_free_tree (tree);
+                g_free (key);
                 return NULL;
             }
 
-            char *key = generate_list_key_from_value (kname);
-            node = APTERYX_NODE (tree, key);
+            char *lkey = generate_list_key_from_value (kname);
+            node = APTERYX_NODE (tree, lkey);
             free (kname);
             DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (node));
 
@@ -3975,11 +3980,13 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
                 if (!cn)
                 {
                     apteryx_free_tree (tree);
+                    g_free (key);
                     return NULL;
                 }
                 g_node_prepend (node, cn);
             }
         }
+        g_free (key);
     }
     /* CONTAINER */
     else if (!sch_is_leaf (schema))
@@ -4024,7 +4031,6 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
         return tree;
     }
 
-    free (key);
     return tree;
 }
 
@@ -4078,8 +4084,12 @@ sch_json_to_gnode (sch_instance * instance, sch_node * schema, json_t * json, in
     return root;
 }
 
+/*
+ * root - the original entire data tree
+ * parent - the place in the tree we are currently working from
+ */
 static bool
-_sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode * parent, int flags)
+_sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode * root, GNode * parent, int flags)
 {
     char *name = sch_name (schema);
     GNode *child = apteryx_find_child (parent, name);
@@ -4147,7 +4157,7 @@ _sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode * paren
         sch_check_condition (schema, child, flags, &path, &condition);
         if (condition)
         {
-            if (!sch_process_condition (instance, child, path, condition))
+            if (!sch_process_condition (instance, root, path, condition))
             {
                 g_free (condition);
                 g_free (path);
@@ -4167,7 +4177,7 @@ _sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode * paren
             {
                 for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
                 {
-                    rc = _sch_apply_conditions (instance, s, child, flags);
+                    rc = _sch_apply_conditions (instance, s, root, child, flags);
                     if (!rc)
                         goto exit;
                 }
@@ -4177,7 +4187,7 @@ _sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode * paren
         {
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                rc = _sch_apply_conditions (instance, s, child, flags);
+                rc = _sch_apply_conditions (instance, s, root, child, flags);
                 if (!rc)
                     goto exit;
             }
@@ -4199,7 +4209,7 @@ sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode *node, i
     {
         for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
         {
-            rc = _sch_apply_conditions (instance, s, node, flags);
+            rc = _sch_apply_conditions (instance, s, node, node, flags);
             if (!rc)
                 break;
         }

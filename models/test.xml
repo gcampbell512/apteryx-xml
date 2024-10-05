@@ -104,7 +104,7 @@
               <REFRESH>Sample REFRESH node</REFRESH>
           </NODE>
           <NODE name="config" >
-            <NODE name="type">
+            <NODE name="type" mode="rw">
               <VALUE name="big" value="1"/>
               <VALUE name="little" value="2"/>
             </NODE>

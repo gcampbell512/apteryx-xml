@@ -25,18 +25,13 @@
 #include <inttypes.h>
 #define APTERYX_XML_LIBXML2
 
-
 typedef struct _cond_result
 {
     bool result;
-    char *value;
-} cond_result;
-
-typedef struct _cond_exists
-{
-    bool match;
     char *path;
-} cond_exists;
+    char *value;
+    char *step_value;  /* actual value of step if step_exists has been called */
+} cond_result;
 
 typedef enum
 {
@@ -120,13 +115,17 @@ sch_axis_parent (char *path, char *step_path, cond_result *presult, bool self, i
 static gboolean
 sch_step_exists_traverse_nodes (GNode *node, gpointer data)
 {
-    cond_exists *exists = (cond_exists *) data;
+    cond_result *exists = (cond_result *) data;
     bool ret = false;
     char *path = apteryx_node_path (node);
 
     if (g_strcmp0 (path, exists->path) == 0)
     {
-        exists->match = true;
+        exists->result = true;
+        if (APTERYX_HAS_VALUE (node))
+        {
+            exists->value = g_strdup (APTERYX_VALUE (node));
+        }
 
         /* Returning true stops the tree traverse */
         ret = true;
@@ -139,12 +138,13 @@ sch_step_exists_traverse_nodes (GNode *node, gpointer data)
 static void
 sch_step_exists (GNode *root, char *path, cond_result *presult)
 {
-    cond_exists exists = { };
+    cond_result exists = { };
 
     exists.path = path;
     g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_ALL, -1,
                      sch_step_exists_traverse_nodes, &exists);
-    presult->result = exists.match;
+    presult->result = exists.result;
+    presult->value = exists.value;
     if (!presult->result)
     {
         GNode *tree = apteryx_get_tree (path);
@@ -152,6 +152,10 @@ sch_step_exists (GNode *root, char *path, cond_result *presult)
         if (tree)
         {
             presult->result = true;
+            if (APTERYX_HAS_VALUE (tree))
+            {
+                presult->value = g_strdup (APTERYX_VALUE (tree));
+            }
             apteryx_free_tree (tree);
         }
     }
@@ -174,7 +178,6 @@ sch_process_operator (sch_instance *instance, GNode *root, char *path,
     if (xnode->left)
         sch_process_xnode (instance, root, path, step_path, xnode->left, &lresult,
                            depth + 1, flags);
-
     if (xnode->right)
     {
         sch_process_xnode (instance, root, path, step_path, xnode->right, &rresult,
@@ -197,14 +200,20 @@ sch_process_operator (sch_instance *instance, GNode *root, char *path,
 
     if (lresult.result)
     {
-        if (xnode->left->type == XPATH_TYPE_STEP ||
-            (xnode->left->type == XPATH_TYPE_FUNCTION &&
-             (g_strcmp0 (xnode->left->name, "current") == 0 ||
-              g_strcmp0 (xnode->left->name, "boolean") == 0)))
+        if (xnode->left->type == XPATH_TYPE_FUNCTION &&
+            (g_strcmp0 (xnode->left->name, "current") == 0 ||
+             g_strcmp0 (xnode->left->name, "boolean") == 0))
         {
             new_step_path = lresult.value;
             lresult.value = apteryx_get_string (new_step_path, NULL);
             g_free (new_step_path);
+        }
+        else if (xnode->left->type == XPATH_TYPE_STEP)
+        {
+            /* We already looked up step value and saved it. */
+            g_free (lresult.value);
+            lresult.value = lresult.step_value;
+            lresult.step_value = NULL;
         }
     }
 
@@ -403,6 +412,7 @@ sch_function_derived_from (sch_instance *instance, GNode *root, char *path,
             if (!result.result)
             {
                 g_free (result.value);
+                g_free (result.step_value);
                 return;
             }
         }
@@ -413,6 +423,7 @@ sch_function_derived_from (sch_instance *instance, GNode *root, char *path,
     if (!s_node)
     {
         g_free (result.value);
+        g_free (result.step_value);
         return;
     }
 
@@ -423,6 +434,7 @@ sch_function_derived_from (sch_instance *instance, GNode *root, char *path,
 
     xmlFree (name);
     g_free (result.value);
+    g_free (result.step_value);
 }
 
 static void
@@ -452,6 +464,7 @@ sch_process_arg_list (sch_instance *instance, GNode *root, char *path,
         }
 
         g_free (result.value);
+        g_free (result.step_value);
     }
 }
 
@@ -485,6 +498,7 @@ sch_function_name (sch_instance *instance, GNode *root, char *path,
             }
         }
         g_free (result.value);
+        g_free (result.step_value);
     }
 }
 
@@ -537,6 +551,7 @@ sch_function_if_feature (sch_instance *instance, GNode *root, char *path,
         *flags &= ~PROC_F_IF_FEATURE;
         presult->result = result.result;
         g_free (result.value);
+        g_free (result.step_value);
     }
 }
 
@@ -567,6 +582,7 @@ sch_function_count (sch_instance *instance, GNode *root, char *path, char *step_
             apteryx_free_tree (tree);
         }
         g_free (result.value);
+        g_free (result.step_value);
         presult->value = g_strdup_printf ("%u", match_count);
         presult->result = true;
     }
@@ -685,11 +701,14 @@ sch_process_xnode (sch_instance *instance, GNode *root, char *path, char *step_p
             g_free (new_step_path);
         }
 
-        if (depth == 0 && presult->result)
+        if (presult->result)
         {
-            /* This tests if a path exists */
+            /* This tests if a path exists, and gets its value */
             sch_step_exists (root, presult->value, &result);
             presult->result = result.result;
+            g_free (presult->step_value);
+            presult->step_value = result.value;
+            result.value = NULL;
         }
         *flags &= ~PROC_F_FIRST_CHILD;
         break;
@@ -901,6 +920,7 @@ sch_process_condition (sch_instance *instance, GNode *root, char *path,
     xnode = sch_xpath_parser (condition);
     sch_process_xnode (instance, root, path, NULL, xnode, &result, 0, &flags);
     g_free (result.value);
+    g_free (result.step_value);
     sch_xpath_free_xnode_tree (xnode);
 
     return result.result;
