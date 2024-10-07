@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <ctype.h>
 #include <string.h>
 #include <glib.h>
 #include <dirent.h>
@@ -92,6 +93,53 @@ const char *
 sch_last_errmsg (void)
 {
     return tl_errmsg;
+}
+
+/* List keys must escape any '/' which is the only reserved
+   character in apteryx */
+static char *
+sch_key_encode (const char *key)
+{
+    GString *encoded = g_string_new (NULL);
+    const char *c = key;
+
+    while (c && *c)
+    {
+        if (*c == '/')
+            g_string_append_printf (encoded, "%%%02X", *c);
+        else
+            g_string_append_c (encoded, *c);
+        c++;
+    }
+    return g_string_free (encoded, false);
+}
+
+/* We decode all escaped special characters except '/'(%2F) as
+   it is a reserved character in apteryx. */
+static char *
+sch_key_decode (const char *key)
+{
+    GString *decoded = g_string_new (NULL);
+    const char *c = key;
+
+    while (c && *c)
+    {
+        uint8_t value;
+        if (*c == '%' && c[1] && c[2] &&
+            isxdigit (c[1]) && isxdigit (c[2]) &&
+            sscanf (c, "%%%02hhx", &value) == 1 &&
+            value != 0x2F)
+        {
+            g_string_append_c (decoded, value);
+            c +=3;
+        }
+        else
+        {
+            g_string_append_c (decoded, *c);
+            c++;
+        }
+    }
+    return g_string_free (decoded, false);
 }
 
 static void
@@ -2309,6 +2357,8 @@ q2n_append_path (sch_node * schema, GNode *root, const char *path, int flags, in
         existing = apteryx_find_child (root, name);
         if (existing)
             root = existing;
+        else if (rschema && *rschema && sch_is_list (*rschema))
+            root = g_node_append_data (root, sch_key_decode (name));
         else
             root = g_node_append_data (root, g_strdup (name));
         node++;
@@ -2826,6 +2876,10 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
             }
             DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (rnode));
         }
+        else if (last_good_schema && sch_is_list (last_good_schema))
+        {
+            rnode = APTERYX_NODE (NULL, sch_key_decode (name));
+        }
         else
         {
             rnode = APTERYX_NODE (NULL, name);
@@ -2858,7 +2912,7 @@ _sch_path_to_gnode (sch_instance * instance, sch_node ** rschema, xmlNs *ns, con
         }
         else if (equals && sch_is_list (schema))
         {
-            child = APTERYX_NODE (NULL, g_strdup (equals));
+            child = APTERYX_NODE (NULL, sch_key_decode (equals));
             g_node_prepend (rnode, child);
             depth++;
             DEBUG (flags, "%*s%s\n", depth * 2, " ", APTERYX_NAME (child));
@@ -3952,7 +4006,7 @@ _sch_json_to_gnode (sch_instance * instance, sch_node * schema, xmlNs *ns,
             return NULL;
         }
 
-        tree = node = APTERYX_NODE (NULL, g_strdup (name));
+        tree = node = APTERYX_NODE (NULL, sch_key_encode (name));
         value = decode_json_type (json);
         if (value && value[0] != '\0' && flags & SCH_F_JSON_TYPES)
         {
