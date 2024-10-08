@@ -3392,10 +3392,10 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
         {
             if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
             {
-                for (GNode *child = parent->children->children; child; child = child->next)
+                for (GNode *leaf = child->children; leaf; leaf = leaf->next)
                 {
-                    free (child->children->data);
-                    child->children->data = g_strdup ("");
+                    free (leaf->children->data);
+                    leaf->children->data = g_strdup ("");
                 }
             }
         }
