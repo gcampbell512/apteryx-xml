@@ -86,6 +86,9 @@
         <NODE name="minutes" mode="r" help="minutes" range="0..59"/>
         <NODE name="seconds" mode="r" help="seconds" range="0..59"/>
       </NODE>
+      <NODE name="romembers" help="A read-only leaf-list">
+        <NODE name="*" mode="r" help="Member of group"/>
+      </NODE>
     </NODE>
     <NODE name="animals">
       <NODE name="animal" help="This is a list of animals">

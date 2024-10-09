@@ -3301,6 +3301,7 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
                     free ((void *)child->children->data);
                     free ((void *)child->data);
                     g_node_destroy (child);
+                    child = NULL;
                 }
                 else if (!sch_is_writable (schema))
                 {
@@ -3369,8 +3370,10 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
     }
     else if (g_strcmp0 (name, "*") == 0)
     {
-        for (GNode *child = parent->children; child; child = child->next)
+        child = parent->children;
+        while (child)
         {
+            GNode *next = child->next;
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
                 if (flags & SCH_F_FILTER_RDEPTH)
@@ -3384,6 +3387,13 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
                 if (!rc)
                     goto exit;
             }
+            if (!child->children)
+            {
+                DEBUG (flags, "Throwing away node \"%s\"\n", APTERYX_NAME (child));
+                free ((void *)child->data);
+                g_node_destroy (child);
+            }
+            child = next;
         }
     }
     else if (sch_is_leaf_list (schema))
@@ -3392,10 +3402,28 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
         {
             if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
             {
-                for (GNode *leaf = child->children; leaf; leaf = leaf->next)
+                /* Access is stored on the * node */
+                sch_node *lschema = sch_node_child_first (schema);
+                if (sch_is_hidden (lschema) ||
+                   (flags & SCH_F_CONFIG && !sch_is_writable (lschema)))
                 {
-                    free (leaf->children->data);
-                    leaf->children->data = g_strdup ("");
+                    DEBUG (flags, "Silently ignoring leaf-list \"%s\"\n", name);
+                    apteryx_free_tree (child);
+                    child = NULL;
+                }
+                else if (!sch_is_writable (lschema))
+                {
+                    ERROR (flags, SCH_E_NOTWRITABLE, "Node not writable \"%s\"\n", name);
+                    rc = false;
+                    goto exit;
+                }
+                else
+                {
+                    for (GNode *leaf = child->children; leaf; leaf = leaf->next)
+                    {
+                        free (leaf->children->data);
+                        leaf->children->data = g_strdup ("");
+                    }
                 }
             }
         }
