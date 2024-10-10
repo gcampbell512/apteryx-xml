@@ -133,4 +133,13 @@
       <NODE name="variable_1" mode="rw" help="variable to test /(flash|card|usb):/?[\.A-Za-z0-9_\-]{1,251}\.cfg/" pattern="(flash|card|usb):/?[\.A-Za-z0-9_\-]{1,251}\.cfg"/>
     </NODE>
   </NODE>
+  <NODE name="test-list" help="This is top-level list">
+    <NODE name="*" help="The list entry with key index">
+      <NODE name="index" mode="rw" help="integer" range="1..999"/>
+      <NODE name="name" mode="rw" help="This is the name of the list entry"/>
+    </NODE>
+  </NODE>
+  <NODE name="test-leaflist" help="This is top-level leaf-list">
+    <NODE name="*" mode="rw" help="The list entry"/>
+  </NODE>
 </MODULE>
