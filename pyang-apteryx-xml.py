@@ -785,15 +785,16 @@ class ApteryxXMLPlugin(plugin.PyangPlugin):
         if niffeature is not None:
             res.attrib["if-feature"] = niffeature.arg
 
-        # Check for a "when" clause on an augmentation
+        # Check for a "when" clause in a "uses" on an augmented container
         if node.keyword == 'container':
             if hasattr(node, 'i_augment'):
                 naug = node.i_augment
                 for ch in naug.i_children:
-                    for uses in ch.i_uses:
-                        nwhen = uses.search_one("when")
-                        if nwhen is not None:
-                            res.attrib["when"] = nwhen.arg
+                    if hasattr(ch, 'i_uses'):
+                        for uses in ch.i_uses:
+                            nwhen = uses.search_one("when")
+                            if nwhen is not None:
+                                res.attrib["when"] = nwhen.arg
 
         nwhen = node.search_one("when")
         if nwhen is not None:
