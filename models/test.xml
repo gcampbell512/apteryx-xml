@@ -123,6 +123,11 @@
               <NODE name="*" mode="rw" help="List of houses"/>
             </NODE>
           </NODE>
+          <NODE name="cages" when="../type = 'big'">
+            <NODE name="cage" help="This is a leaf list of pet houses">
+              <NODE name="*" mode="rw" help="List of houses"/>
+            </NODE>
+          </NODE>
           <NODE name="claws" when="../../wombat" mode="rw" help="claws per paw"/>
           <NODE name="friend" must="../../cat" mode="rw" help="animal friend"/>
           <NODE name="n-type" when="derived-from-or-self(./type, 'a-types:type')" mode="rw" help="animal n-type"/>

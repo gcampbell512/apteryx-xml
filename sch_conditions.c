@@ -31,6 +31,7 @@ typedef struct _cond_result
     char *path;
     char *value;
     char *step_value;  /* actual value of step if step_exists has been called */
+    sch_instance *instance;
 } cond_result;
 
 typedef enum
@@ -125,6 +126,12 @@ sch_step_exists_traverse_nodes (GNode *node, gpointer data)
         if (APTERYX_HAS_VALUE (node))
         {
             exists->value = g_strdup (APTERYX_VALUE (node));
+            sch_node *s_node = sch_lookup (exists->instance, path);
+            if (s_node)
+            {
+                /* We now have the schema node for the value, see if any translation is needed */
+                exists->value = sch_translate_from (s_node, exists->value);
+            }
         }
 
         /* Returning true stops the tree traverse */
@@ -136,11 +143,12 @@ sch_step_exists_traverse_nodes (GNode *node, gpointer data)
 }
 
 static void
-sch_step_exists (GNode *root, char *path, cond_result *presult)
+sch_step_exists (sch_instance *instance, GNode *root, char *path, cond_result *presult)
 {
     cond_result exists = { };
 
     exists.path = path;
+    exists.instance = instance;
     g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_ALL, -1,
                      sch_step_exists_traverse_nodes, &exists);
     presult->result = exists.result;
@@ -211,6 +219,16 @@ sch_process_operator (sch_instance *instance, GNode *root, char *path,
         else if (xnode->left->type == XPATH_TYPE_STEP)
         {
             /* We already looked up step value and saved it. */
+            if (rresult.result && rresult.value)
+            {
+                /* The left node retains the path to the node with the value */
+                sch_node *s_node = sch_lookup (instance, lresult.value);
+                if (s_node)
+                {
+                    /* We now have the schema node for the value, see if any translation is needed */
+                    rresult.value = sch_translate_from (s_node, rresult.value);
+                }
+            }
             g_free (lresult.value);
             lresult.value = lresult.step_value;
             lresult.step_value = NULL;
@@ -704,7 +722,7 @@ sch_process_xnode (sch_instance *instance, GNode *root, char *path, char *step_p
         if (presult->result)
         {
             /* This tests if a path exists, and gets its value */
-            sch_step_exists (root, presult->value, &result);
+            sch_step_exists (instance, root, presult->value, &result);
             presult->result = result.result;
             g_free (presult->step_value);
             presult->step_value = result.value;
