@@ -129,7 +129,9 @@ typedef enum
 GNode *sch_path_to_gnode (sch_instance * instance, sch_node * schema, const char * path, int flags, sch_node ** rschema);
 bool sch_query_to_gnode (sch_instance * instance, sch_node * schema, GNode *parent, const char * query, int flags,
                          int *rflags, int *param_depth);
-bool sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags, int rdepth);
+bool sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags);
+void sch_add_defaults (sch_instance *instance, sch_node *rschema, GNode **tree, GNode **query,
+                       GNode *rnode, GNode *qnode, int rdepth, int qdepth, int flags);
 GNode *sch_path_to_query (sch_instance * instance, sch_node * schema, const char * path, int flags); //DEPRECATED
 void sch_gnode_sort_children (sch_node * schema, GNode * parent);
 void sch_check_condition (sch_node *node, GNode *root, int flags, char **path, char **condition);

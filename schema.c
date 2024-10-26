@@ -3218,7 +3218,7 @@ sch_traverse_get_schema (sch_instance * instance, GNode *node, int flags)
 
 
 static bool
-_sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent, int flags, int depth, int rdepth)
+_sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent, int flags)
 {
     char *name = sch_name (schema);
     GNode *child = apteryx_find_child (parent, name);
@@ -3277,94 +3277,80 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
             rc = false;
             goto exit;
         }
-        depth++;
     }
 
     if (sch_is_leaf (schema))
     {
         if ((!child && flags & SCH_F_ADD_MISSING_NULL))
         {
-            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
-            {
-                child = APTERYX_LEAF (parent, name, g_strdup (""));
-                name = NULL;
-            }
+            child = APTERYX_LEAF (parent, name, g_strdup (""));
+            name = NULL;
         }
         else if (child && flags & SCH_F_SET_NULL)
         {
-            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
+            if (sch_is_hidden (schema) ||
+                (flags & SCH_F_CONFIG && !sch_is_writable (schema)))
             {
-                if (sch_is_hidden (schema) ||
-                   (flags & SCH_F_CONFIG && !sch_is_writable (schema)))
+                DEBUG (flags, "Silently ignoring node \"%s\"\n", name);
+                free ((void *)child->children->data);
+                free ((void *)child->data);
+                g_node_destroy (child);
+                child = NULL;
+            }
+            else if (!sch_is_writable (schema))
+            {
+                ERROR (flags, SCH_E_NOTWRITABLE, "Node not writable \"%s\"\n", name);
+                rc = false;
+                goto exit;
+            }
+            else
+            {
+                free (child->children->data);
+                child->children->data = g_strdup ("");
+            }
+        }
+        else if (flags & SCH_F_ADD_DEFAULTS)
+        {
+            /* We do not need to do anything at all if this leaf does not have a default */
+            char *value = sch_translate_from (schema, sch_default_value (schema));
+            if (value)
+            {
+                /* Add completely missing leaves */
+                if (!child)
                 {
-                    DEBUG (flags, "Silently ignoring node \"%s\"\n", name);
+                    child = APTERYX_LEAF (parent, name, value);
+                    name = NULL;
+                    value = NULL;
+                }
+                /* Add missing values */
+                else if (!APTERYX_HAS_VALUE (child))
+                {
+                    APTERYX_NODE (child, value);
+                    value = NULL;
+                }
+                /* Replace empty value */
+                else if (APTERYX_VALUE (child) == NULL || g_strcmp0 (APTERYX_VALUE (child), "") == 0)
+                {
+                    free (child->children->data);
+                    child->children->data = value;
+                    value = NULL;
+                }
+                free (value);
+            }
+        }
+        else if (child && (flags & SCH_F_TRIM_DEFAULTS))
+        {
+            char *value = sch_translate_from (schema, sch_default_value (schema));
+            if (value)
+            {
+                if (g_strcmp0 (APTERYX_VALUE (child), value) == 0)
+                {
                     free ((void *)child->children->data);
                     free ((void *)child->data);
                     g_node_destroy (child);
                     child = NULL;
                 }
-                else if (!sch_is_writable (schema))
-                {
-                    ERROR (flags, SCH_E_NOTWRITABLE, "Node not writable \"%s\"\n", name);
-                    rc = false;
-                    goto exit;
-                }
-                else
-                {
-                    free (child->children->data);
-                    child->children->data = g_strdup ("");
-                }
-            }
-        }
-        else if (flags & SCH_F_ADD_DEFAULTS)
-        {
-            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth ||
-                (depth == rdepth - 1 && child && g_strcmp0(name, APTERYX_NAME (child)) == 0)))
-            {
-                /* We do not need to do anything at all if this leaf does not have a default */
-                char *value = sch_translate_from (schema, sch_default_value (schema));
-                if (value)
-                {
-                    /* Add completely missing leaves */
-                    if (!child)
-                    {
-                        child = APTERYX_LEAF (parent, name, value);
-                        name = NULL;
-                        value = NULL;
-                    }
-                    /* Add missing values */
-                    else if (!APTERYX_HAS_VALUE (child))
-                    {
-                        APTERYX_NODE (child, value);
-                        value = NULL;
-                    }
-                    /* Replace empty value */
-                    else if (APTERYX_VALUE (child) == NULL || g_strcmp0 (APTERYX_VALUE (child), "") == 0)
-                    {
-                        free (child->children->data);
-                        child->children->data = value;
-                        value = NULL;
-                    }
-                    free (value);
-                }
-            }
-        }
-        else if (child && (flags & SCH_F_TRIM_DEFAULTS))
-        {
-            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
-            {
-                char *value = sch_translate_from (schema, sch_default_value (schema));
-                if (value)
-                {
-                    if (g_strcmp0 (APTERYX_VALUE (child), value) == 0)
-                    {
-                        free ((void *)child->children->data);
-                        free ((void *)child->data);
-                        g_node_destroy (child);
-                        child = NULL;
-                    }
-                    free (value);
-                }
+                free (value);
             }
         }
     }
@@ -3376,14 +3362,7 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
             GNode *next = child->next;
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                if (flags & SCH_F_FILTER_RDEPTH)
-                {
-                    rc = _sch_traverse_nodes (instance, s, child, flags, depth+1, rdepth);
-                }
-                else
-                {
-                    rc = _sch_traverse_nodes (instance, s, child, flags, 0, 0);
-                }
+                rc = _sch_traverse_nodes (instance, s, child, flags);
                 if (!rc)
                     goto exit;
             }
@@ -3400,56 +3379,45 @@ _sch_traverse_nodes (sch_instance * instance, sch_node * schema, GNode * parent,
     {
         if (child && (flags & SCH_F_SET_NULL))
         {
-            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
+            /* Access is stored on the * node */
+            sch_node *lschema = sch_node_child_first (schema);
+            if (sch_is_hidden (lschema) ||
+                (flags & SCH_F_CONFIG && !sch_is_writable (lschema)))
             {
-                /* Access is stored on the * node */
-                sch_node *lschema = sch_node_child_first (schema);
-                if (sch_is_hidden (lschema) ||
-                   (flags & SCH_F_CONFIG && !sch_is_writable (lschema)))
+                DEBUG (flags, "Silently ignoring leaf-list \"%s\"\n", name);
+                apteryx_free_tree (child);
+                child = NULL;
+            }
+            else if (!sch_is_writable (lschema))
+            {
+                ERROR (flags, SCH_E_NOTWRITABLE, "Node not writable \"%s\"\n", name);
+                rc = false;
+                goto exit;
+            }
+            else
+            {
+                for (GNode *leaf = child->children; leaf; leaf = leaf->next)
                 {
-                    DEBUG (flags, "Silently ignoring leaf-list \"%s\"\n", name);
-                    apteryx_free_tree (child);
-                    child = NULL;
-                }
-                else if (!sch_is_writable (lschema))
-                {
-                    ERROR (flags, SCH_E_NOTWRITABLE, "Node not writable \"%s\"\n", name);
-                    rc = false;
-                    goto exit;
-                }
-                else
-                {
-                    for (GNode *leaf = child->children; leaf; leaf = leaf->next)
-                    {
-                        free (leaf->children->data);
-                        leaf->children->data = g_strdup ("");
-                    }
+                    free (leaf->children->data);
+                    leaf->children->data = g_strdup ("");
                 }
             }
         }
     }
     else
     {
-        if (!child && !sch_is_list (schema) && (flags & (SCH_F_ADD_DEFAULTS|SCH_F_TRIM_DEFAULTS|SCH_F_ADD_MISSING_NULL)))
+        if (!child && !sch_is_list (schema) &&
+            (flags & (SCH_F_ADD_DEFAULTS|SCH_F_TRIM_DEFAULTS|SCH_F_ADD_MISSING_NULL)))
         {
-            if (!(flags & SCH_F_FILTER_RDEPTH) || (depth >= rdepth))
-            {
-                child = APTERYX_NODE (parent, name);
-                name = NULL;
-            }
+            child = APTERYX_NODE (parent, name);
+            name = NULL;
         }
+
         if (child)
         {
             for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
             {
-                if (flags & SCH_F_FILTER_RDEPTH)
-                {
-                    rc = _sch_traverse_nodes (instance, s, child, flags, depth+1, rdepth);
-                }
-                else
-                {
-                    rc = _sch_traverse_nodes (instance, s, child, flags, 0, 0);
-                }
+                rc = _sch_traverse_nodes (instance, s, child, flags);
                 if (!rc)
                     goto exit;
             }
@@ -3475,77 +3443,343 @@ exit:
 }
 
 bool
-sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags, int rdepth)
+sch_traverse_tree (sch_instance * instance, sch_node * schema, GNode * node, int flags)
 {
     bool rc = false;
-    if (flags & SCH_F_FILTER_RDEPTH)
+    schema = schema ?: xmlDocGetRootElement (instance->doc);
+    /* if this has been called from restconf, then the schema may be at a proxy node */
+    if (sch_is_proxy (schema))
     {
-        schema = sch_traverse_get_schema (instance, node, flags);
-        if (schema)
+        xmlNs *nns = NULL;
+        char *colon;
+        char *name;
+
+        /* move to the list index specifier */
+        node = node->children;
+        if (!node)
+            return rc;
+        name = g_strdup (APTERYX_NAME (node));
+        schema = xmlDocGetRootElement (instance->doc);
+        colon = strchr (name, ':');
+        if (schema && colon)
         {
-            for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
+            colon[0] = '\0';
+            nns = sch_lookup_ns (instance, schema, name, flags, false);
+            if (!nns)
             {
-                rc = _sch_traverse_nodes (instance, s, node, flags, 1, rdepth);
-                if (!rc)
-                    break;
+                /* No namespace found assume the node is supposed to have a colon in it */
+                colon[0] = ':';
+            }
+            else
+            {
+                /* We found a namespace. Remove the prefix */
+                char *_name = name;
+                name = g_strdup (colon + 1);
+                free (_name);
             }
         }
+        schema = _sch_node_child (nns, schema, name);
+        g_free (name);
+        if (!schema)
+            return rc;
+    }
+
+    if (sch_is_leaf (schema))
+    {
+        rc = _sch_traverse_nodes (instance, schema, node->parent, flags);
     }
     else
     {
-        schema = schema ?: xmlDocGetRootElement (instance->doc);
-        /* if this has been called from restconf, then the schema may be at a proxy node */
-        if (sch_is_proxy (schema))
+        for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
         {
-            xmlNs *nns = NULL;
-            char *colon;
-            char *name;
-
-            /* move to the list index specifier */
-            node = node->children;
-            if (!node)
-                return rc;
-            name = g_strdup (APTERYX_NAME (node));
-            schema = xmlDocGetRootElement (instance->doc);
-            colon = strchr (name, ':');
-            if (schema && colon)
-            {
-                colon[0] = '\0';
-                nns = sch_lookup_ns (instance, schema, name, flags, false);
-                if (!nns)
-                {
-                    /* No namespace found assume the node is supposed to have a colon in it */
-                    colon[0] = ':';
-                }
-                else
-                {
-                    /* We found a namespace. Remove the prefix */
-                    char *_name = name;
-                    name = g_strdup (colon + 1);
-                    free (_name);
-                }
-            }
-            schema = _sch_node_child (nns, schema, name);
-            g_free (name);
-            if (!schema)
-                return rc;
-        }
-
-        if (sch_is_leaf (schema))
-        {
-            rc = _sch_traverse_nodes (instance, schema, node->parent, flags, 0, 0);
-        }
-        else
-        {
-            for (sch_node *s = sch_node_child_first (schema); s; s = sch_node_next_sibling (s))
-            {
-                rc = _sch_traverse_nodes (instance, s, node, flags, 0, 0);
-                if (!rc)
-                    break;
-            }
+            rc = _sch_traverse_nodes (instance, s, node, flags);
+            if (!rc)
+                break;
         }
     }
     return rc;
+}
+
+static gpointer
+copy_node_data (gconstpointer src, gpointer dummy)
+{
+    char *data = g_strdup (src);
+
+    return data;
+}
+
+static void
+_merge_gnode_nodes (GNode *node1, GNode *node2)
+{
+    GNode *child1;
+    GNode *child2;
+    GNode *copy;
+
+    for (child1 = node1->children; child1; child1 = child1->next)
+    {
+        if (!child1->children)
+            continue;
+
+        /* Match child1 to a child of node2. If matched descend down the tree. */
+        for (child2 = node2->children; child2; child2 = child2->next)
+        {
+            if (g_strcmp0 (APTERYX_NAME (child2), "*") == 0 ||
+                g_strcmp0 (APTERYX_NAME (child1), APTERYX_NAME (child2)) == 0)
+            {
+                _merge_gnode_nodes (child1, child2);
+                break;
+            }
+        }
+    }
+
+    for (child2 = node2->children; child2; child2 = child2->next)
+    {
+        if (g_strcmp0 (APTERYX_NAME (child2), "*") == 0)
+            continue;
+
+        if (!child2->children)
+            continue;
+
+        /* Match child2 to a child of node1. If not matched add the child2 tree
+         * to the parent node1. */
+        for (child1 = node1->children; child1; child1 = child1->next)
+        {
+            if (g_strcmp0 (APTERYX_NAME (child1), APTERYX_NAME (child2)) == 0)
+                break;
+        }
+
+        if (!child1)
+        {
+            copy = g_node_copy_deep (child2, copy_node_data, NULL);
+            g_node_append (node1, copy);
+        }
+    }
+}
+
+/* Merge tree2 into tree1. This is done by copying any part of the tree2 that is not in
+ * tree1 into tree1. Tree2 is deleted at the end of the merge. */
+static void
+merge_gnode_trees (GNode *tree1, GNode *tree2)
+{
+    if (tree1 && tree2)
+    {
+        _merge_gnode_nodes (tree1, tree2);
+    }
+
+    if (tree2)
+        apteryx_free_tree (tree2);
+}
+
+static void
+cleanup_query_after_adding_defaults (GNode *node1, GNode *node2)
+{
+    GNode *child1;
+    GNode *child2 = NULL;
+    GList *remove = NULL;
+
+    for (child1 = node1->children; child1; child1 = child1->next)
+    {
+        /* Match child1 to a child of node2. If matched descend down the tree. */
+        for (child2 = node2->children; child2; child2 = child2->next)
+        {
+            if (g_strcmp0 (APTERYX_NAME (child1), "*") == 0 ||
+                g_strcmp0 (APTERYX_NAME (child1), APTERYX_NAME (child2)) == 0)
+            {
+                cleanup_query_after_adding_defaults (child1, child2);
+                break;
+            }
+        }
+
+        if (node2->children && !child2 && child1->children)
+        {
+            remove = g_list_append (remove, child1);
+        }
+    }
+
+    if (remove)
+    {
+        for (GList *iter = remove; iter; iter = g_list_next (iter))
+        {
+            GNode *rem_node = iter->data;
+            g_node_unlink (rem_node);
+            apteryx_free_tree (rem_node);
+        }
+        g_list_free (remove);
+    }
+}
+
+static gboolean
+cleanup_query_tree (GNode *node, gpointer data)
+{
+    sch_instance *instance = (sch_instance *) data;
+
+    /* Cleanup any NULL data leaves from a subtree query */
+    if (node->data == NULL)
+    {
+        GNode *parent = node->parent;
+        g_node_unlink (node);
+        g_node_destroy (node);
+        if (!parent)
+            return false;
+        node = parent;
+    }
+
+    /* If the node is a wildcard and not a wildcard for a list key, then remove it from the tree */
+    if (g_strcmp0 (APTERYX_NAME (node), "*") == 0)
+    {
+        char *path = apteryx_node_path (node);
+        sch_node *s_node = sch_lookup (instance, path);
+        g_free (path);
+        if (s_node)
+        {
+            sch_node *s_parent = sch_node_parent (s_node);
+            if (s_parent && !sch_is_list (s_parent))
+            {
+                g_node_unlink (node);
+                apteryx_free_tree (node);
+            }
+        }
+        else
+        {
+            g_node_unlink (node);
+            apteryx_free_tree (node);
+        }
+    }
+    return false;
+}
+
+void
+sch_add_defaults (sch_instance *instance, sch_node *rschema, GNode **tree, GNode **query,
+                  GNode *rnode, GNode *qnode, int rdepth, int qdepth, int flags)
+{
+
+    if (*tree && rdepth == 1)
+        sch_traverse_tree (instance, rschema, rnode, flags);
+    else
+    {
+        GNode *query_copy;
+        GNode *dnode = qnode;
+        GNode *lnode = qnode;
+        sch_node *lschema;
+        char *schema_name;
+        char *key = NULL;
+        bool exact = false;
+        int diff = qdepth - rdepth;
+
+        /* Cleanup the query tree trailing wildcard '*' nodes from the query except
+         * for list key wildcards */
+        g_node_traverse (*query, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, cleanup_query_tree, instance);
+
+        /*  Find any list keys schema nodes */
+        lschema = rschema;
+        while (lschema)
+        {
+            if (sch_is_list (lschema))
+            {
+                key = sch_list_key (lschema);
+                break;
+            }
+            lschema = sch_node_parent (lschema);
+            if (lnode->parent)
+                lnode = lnode->parent;
+        }
+        if (!lschema)
+            lschema = rschema;
+
+        schema_name = sch_name (lschema);
+
+        /* Look for an explicit list key */
+        if (diff == 0 && sch_is_list (lschema) && g_strcmp0 (APTERYX_NAME (lnode), schema_name) != 0 &&
+            g_strcmp0 (APTERYX_NAME (lnode), "*") != 0)
+        {
+            if (dnode->parent)
+                dnode = dnode->parent;
+
+            exact = true;
+        }
+
+        query_copy = g_node_copy_deep (*query, copy_node_data, NULL);
+        while (diff--)
+            dnode = dnode->parent;
+
+        /* Add defaults to the reformed query */
+        sch_traverse_tree (instance, rschema, dnode, flags);
+
+        /* Logically AND the two queries - this is to remove fields that were not specifically requested in the original query */
+        cleanup_query_after_adding_defaults (*query, query_copy);
+
+        /* Find the key of the copy query */
+        dnode = query_copy;
+        while (dnode && g_node_n_children (dnode) == 1 &&
+                g_strcmp0 (APTERYX_NAME (g_node_first_child (dnode)), "*") != 0)
+        {
+            dnode = g_node_first_child (dnode);
+        }
+
+        /* Check if this is a query for a specific list item or query for all list items */
+        if (exact || (dnode->children && g_strcmp0 (APTERYX_NAME (g_node_first_child (dnode)), "*") == 0))
+        {
+            GNode *child;
+
+            if (!exact)
+            {
+                dnode = dnode->children;
+                child = dnode->children;
+
+                if (child)
+                {
+                    g_node_unlink (child);
+                    apteryx_free_tree (child);
+                }
+                if (key)
+                {
+                    GNode *defaults_tree = NULL;
+
+                    /* Query the database with a query that returns the list key information for each match. This is required
+                    * as some queries return no information for the original query, but would if defaults are included */
+                    g_node_append_data (dnode, g_strdup (key));
+                    defaults_tree = apteryx_query (query_copy);
+
+                    /* Merge the result that contains every list element with the defaults to be added */
+                    merge_gnode_trees (defaults_tree, *query);
+                    *query = NULL;
+                    if (*tree)
+                    {
+                        /* Finally merge the defaults tree with the original query result. If a value exists in the original
+                        * query result it takes precendence of a default value  */
+                        merge_gnode_trees (*tree, defaults_tree);
+                    }
+                    else
+                    {
+                        /* If there was not an original query result, then just use the tree of default values for each list element */
+                        *tree = defaults_tree;
+                    }
+                }
+            }
+            else if (*tree)
+            {
+                merge_gnode_trees (*tree, *query);
+                *query = NULL;
+            }
+        }
+        else if (*tree)
+        {
+            /* Process a query from above a primary list node  Add defaults to the existing response tree and merge with any defaults */
+            if (rnode)
+                sch_traverse_tree (instance, rschema, rnode, flags);
+            merge_gnode_trees (*tree, *query);
+            *query = NULL;
+        }
+        else
+        {
+            /* Just use the query tree with any defaults */
+            *tree = *query;
+            *query = NULL;
+        }
+        apteryx_free_tree (query_copy);
+        g_free (key);
+        g_free (schema_name);
+    }
 }
 
 static int _sch_strcmp_ll (const char *stra, const char *strb)
