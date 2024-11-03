@@ -4180,7 +4180,7 @@ _sch_apply_conditions (sch_instance * instance, sch_node * schema, GNode * root,
     }
 
     /* Check the YANG condition if we have a node with a child with data */
-    if (child && child->children && ((char *) child->children->data)[0] != '\0')
+    if (child && child->children && child->children->data && ((char *) child->children->data)[0] != '\0')
     {
         sch_check_condition (schema, child, flags, &path, &condition);
         if (condition)
