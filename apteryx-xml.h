@@ -63,8 +63,8 @@ GList *sch_get_loaded_models (sch_instance * instance);
 sch_node *sch_child_first (sch_instance *instance);
 sch_node *sch_node_parent (sch_node *node);
 sch_node *sch_node_child (sch_node *parent, const char *name);
-sch_node *sch_node_namespace_child (sch_node * parent, const char *namespace, const char *child);
-sch_node *sch_node_by_namespace (sch_instance * instance, const char *namespace,
+sch_node *sch_node_namespace_child (sch_node * parent, const char *ns, const char *child);
+sch_node *sch_node_by_namespace (sch_instance * instance, const char *ns,
                                  const char *prefix);
 sch_node *sch_node_child_first (sch_node * parent);
 sch_node *sch_node_next_sibling (sch_node * node);
