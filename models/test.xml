@@ -107,7 +107,7 @@
               <REFRESH>Sample REFRESH node</REFRESH>
           </NODE>
           <NODE name="config" >
-            <NODE name="type" mode="rw">
+            <NODE name="type" mode="rw" default="big">
               <VALUE name="big" value="1"/>
               <VALUE name="little" value="2"/>
             </NODE>
@@ -136,6 +136,29 @@
     </NODE>
     <NODE name="patterns">
       <NODE name="variable_1" mode="rw" help="variable to test /(flash|card|usb):/?[\.A-Za-z0-9_\-]{1,251}\.cfg/" pattern="(flash|card|usb):/?[\.A-Za-z0-9_\-]{1,251}\.cfg"/>
+    </NODE>
+    <NODE name="objects" help="A generic object">
+      <NODE name="object" mode="rw" help="One object in a list">
+        <NODE name="*" help="The object's key - the name variable below">
+          <NODE name="name" mode="rw" help="This is the name of the object"/>
+          <NODE name="top-container" mode="rw" help="The top container in the object">
+            <NODE name="conf" mode="rw" help="The config for the top container">
+              <NODE name="enabled" mode="rw" help="Whether the top container is enabled" default="true">
+                <VALUE name="true" value="1"/>
+                <VALUE name="false" value="2"/>
+              </NODE>
+            </NODE>
+            <NODE name="inner-container" mode="rw" help="The inner container in the object">
+              <NODE name="conf" mode="rw" help="The config for the top container">
+                <NODE name="enabled" mode="rw" help="Whether the top container is enabled" default="false">
+                  <VALUE name="true" value="1"/>
+                  <VALUE name="false" value="2"/>
+                </NODE>
+              </NODE>
+            </NODE>
+          </NODE>
+        </NODE>
+      </NODE>
     </NODE>
   </NODE>
   <NODE name="test-list" help="This is top-level list">

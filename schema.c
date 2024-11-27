@@ -3517,9 +3517,6 @@ _merge_gnode_nodes (GNode *node1, GNode *node2)
 
     for (child1 = node1->children; child1; child1 = child1->next)
     {
-        if (!child1->children)
-            continue;
-
         /* Match child1 to a child of node2. If matched descend down the tree. */
         for (child2 = node2->children; child2; child2 = child2->next)
         {
