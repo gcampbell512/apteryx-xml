@@ -3551,6 +3551,13 @@ _merge_gnode_nodes (GNode *node1, GNode *node2)
             g_node_append (node1, copy);
         }
     }
+
+    /* If a part of tree 2 exists but not in tree 1, add it in now */
+    if (!node1->children && node2->children)
+    {
+        copy = g_node_copy_deep (node2->children, copy_node_data, NULL);
+        g_node_append (node1, copy);
+    }
 }
 
 /* Merge tree2 into tree1. This is done by copying any part of the tree2 that is not in
@@ -3565,44 +3572,6 @@ merge_gnode_trees (GNode *tree1, GNode *tree2)
 
     if (tree2)
         apteryx_free_tree (tree2);
-}
-
-static void
-cleanup_query_after_adding_defaults (GNode *node1, GNode *node2)
-{
-    GNode *child1;
-    GNode *child2 = NULL;
-    GList *remove = NULL;
-
-    for (child1 = node1->children; child1; child1 = child1->next)
-    {
-        /* Match child1 to a child of node2. If matched descend down the tree. */
-        for (child2 = node2->children; child2; child2 = child2->next)
-        {
-            if (g_strcmp0 (APTERYX_NAME (child1), "*") == 0 ||
-                g_strcmp0 (APTERYX_NAME (child1), APTERYX_NAME (child2)) == 0)
-            {
-                cleanup_query_after_adding_defaults (child1, child2);
-                break;
-            }
-        }
-
-        if (node2->children && !child2 && child1->children)
-        {
-            remove = g_list_append (remove, child1);
-        }
-    }
-
-    if (remove)
-    {
-        for (GList *iter = remove; iter; iter = g_list_next (iter))
-        {
-            GNode *rem_node = iter->data;
-            g_node_unlink (rem_node);
-            apteryx_free_tree (rem_node);
-        }
-        g_list_free (remove);
-    }
 }
 
 static gboolean
@@ -3645,6 +3614,56 @@ cleanup_query_tree (GNode *node, gpointer data)
     return false;
 }
 
+/**
+ * Use the qnode to lookup the appropriate schema node for the call to sch_traverse_tree. This means
+ * defaults are applied to the correct portion of the query. Note netconf often passes a request for key
+ * field along with the actual field to query. If there is a choice then use the first non-key field for the qnode.
+ */
+sch_node *
+sch_process_qnode (sch_instance *instance, GNode **qnode)
+{
+    GNode *node = *qnode;
+    char *node_path;
+    sch_node *lschema;
+    sch_node *parent;
+    char *parent_name;
+    char *key;
+
+    node_path = apteryx_node_path (node);
+    lschema = sch_lookup (instance, node_path);
+    g_free (node_path);
+    if (lschema)
+    {
+        parent = sch_node_parent (lschema);
+        if (parent)
+        {
+            parent_name = sch_name (parent);
+            /* The "*" indicates the parent node is list */
+            if (g_strcmp0 (parent_name, "*") == 0)
+            {
+                parent = sch_node_parent (parent);
+                key = sch_list_key (parent);
+                if (key && g_strcmp0 (key, APTERYX_NAME (node)) == 0)
+                {
+                    if (node->next)
+                    {
+                        /* If the current qnode is the key node then shift to the next sibling node */
+                        node = node->next;
+                        *qnode = node;
+                        node_path = apteryx_node_path (node);
+                        lschema = sch_lookup (instance, node_path);
+                        g_free (node_path);
+                    }
+                }
+                g_free (key);
+            }
+            g_free (parent_name);
+        }
+    }
+
+    return lschema;
+}
+
 void
 sch_add_defaults (sch_instance *instance, sch_node *rschema, GNode **tree, GNode **query,
                   GNode *rnode, GNode *qnode, int rdepth, int qdepth, int flags)
@@ -3661,7 +3680,6 @@ sch_add_defaults (sch_instance *instance, sch_node *rschema, GNode **tree, GNode
         char *schema_name;
         char *key = NULL;
         bool exact = false;
-        int diff = qdepth - rdepth;
 
         /* Cleanup the query tree trailing wildcard '*' nodes from the query except
          * for list key wildcards */
@@ -3686,7 +3704,7 @@ sch_add_defaults (sch_instance *instance, sch_node *rschema, GNode **tree, GNode
         schema_name = sch_name (lschema);
 
         /* Look for an explicit list key */
-        if (diff == 0 && sch_is_list (lschema) && g_strcmp0 (APTERYX_NAME (lnode), schema_name) != 0 &&
+        if (sch_is_list (lschema) && g_strcmp0 (APTERYX_NAME (lnode), schema_name) != 0 &&
             g_strcmp0 (APTERYX_NAME (lnode), "*") != 0)
         {
             if (dnode->parent)
@@ -3696,14 +3714,12 @@ sch_add_defaults (sch_instance *instance, sch_node *rschema, GNode **tree, GNode
         }
 
         query_copy = g_node_copy_deep (*query, copy_node_data, NULL);
-        while (diff--)
-            dnode = dnode->parent;
+        lschema = sch_process_qnode (instance, &qnode);
+        if (!lschema)
+            lschema = rschema;
 
         /* Add defaults to the reformed query */
-        sch_traverse_tree (instance, rschema, dnode, flags);
-
-        /* Logically AND the two queries - this is to remove fields that were not specifically requested in the original query */
-        cleanup_query_after_adding_defaults (*query, query_copy);
+        sch_traverse_tree (instance, lschema, qnode, flags);
 
         /* Find the key of the copy query */
         dnode = query_copy;
